@@ -11,5 +11,6 @@ web/dist/
 web/.next/
 web/.vinext/
 web/.wrangler/
+web/*.tsbuildinfo
 *.log
 .coverage

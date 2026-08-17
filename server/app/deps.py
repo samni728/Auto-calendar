@@ -8,6 +8,7 @@ from .config import get_settings
 from .db import get_db
 from .models import User, UserSession, WorkspaceMembership
 from .security import token_hash
+from .time_utils import as_utc
 
 
 def current_user(
@@ -20,7 +21,7 @@ def current_user(
         select(UserSession).where(UserSession.token_hash == token_hash(session_token))
     )
     now = datetime.now(UTC)
-    if not session or session.expires_at < now:
+    if not session or as_utc(session.expires_at) < now:
         if session:
             db.delete(session)
             db.commit()

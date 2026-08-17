@@ -27,9 +27,12 @@ from ..services.providers import (
     authorization_url,
     exchange_code,
     list_calendars,
+    provider_configuration_issue,
     provider_configured,
+    redirect_uri,
     sync_connection,
 )
+from ..time_utils import as_utc
 
 router = APIRouter(prefix="/api", tags=["connections"])
 PROVIDERS = ("google", "microsoft")
@@ -55,12 +58,18 @@ def _connection(db: Session, user_id: str, provider: str) -> ProviderConnection:
 def _response(provider: str, connection: ProviderConnection | None) -> ConnectionResponse:
     if not connection:
         return ConnectionResponse(
-            provider=provider, configured=provider_configured(provider), status="disconnected"
+            provider=provider,
+            configured=provider_configured(provider),
+            configuration_issue=provider_configuration_issue(provider),
+            redirect_uri=redirect_uri(provider),
+            status="disconnected",
         )
     return ConnectionResponse(
         id=connection.id,
         provider=provider,
         configured=provider_configured(provider),
+        configuration_issue=provider_configuration_issue(provider),
+        redirect_uri=redirect_uri(provider),
         status=connection.status,
         account_email=connection.account_email,
         selected_calendar_id=connection.selected_calendar_id,
@@ -89,8 +98,9 @@ def oauth_start(
     db: Session = Depends(get_db),
 ):
     _validate_provider(provider)
-    if not provider_configured(provider):
-        raise HTTPException(status_code=409, detail="请先在服务端配置 OAuth Client ID 与 Secret")
+    configuration_issue = provider_configuration_issue(provider)
+    if configuration_issue:
+        raise HTTPException(status_code=409, detail=configuration_issue)
     state = create_secret_token()
     verifier = create_secret_token(64)
     db.add(
@@ -127,7 +137,7 @@ async def oauth_callback(
     if (
         not oauth_state
         or oauth_state.provider != provider
-        or oauth_state.expires_at < now
+        or as_utc(oauth_state.expires_at) < now
         or not code
     ):
         raise HTTPException(status_code=400, detail="OAuth state 已失效，请重新连接")

@@ -125,33 +125,63 @@ The menu supports installing dependencies, starting, stopping, restarting, check
 
 Open [http://localhost:8080](http://localhost:8080). Source mode and Docker mode cannot use port `8080` at the same time; stop one before starting the other. To use a locally installed PostgreSQL instead of SQLite, set `SOURCE_DATABASE_URL` in `.env`.
 
+Alembic “migration complete” only means that the database schema is current; it does not copy business data between PostgreSQL and SQLite. To make source mode use a one-time copy of the current Docker data, choose **Import data from Docker PostgreSQL** in the menu or run:
+
+```bash
+./scripts/manage-source.sh import-docker
+```
+
+The importer stops source services, creates a timestamped SQLite backup, copies users, workspaces, rooms, events, sessions, audit records, and encrypted provider connections, then restarts source mode. Docker PostgreSQL remains the authoritative separate database; later edits are not automatically synchronized between the two databases.
+
 ### OAuth configuration
 
-Copy or update `.env` with credentials created in your own test projects:
+After starting Auto Calendar, open the built-in illustrated guide at [http://localhost:8080/oauth-guide](http://localhost:8080/oauth-guide). The Calendar Connections page also links to this guide. It covers the current Google Cloud and Microsoft Azure/Entra screens, local versus public callback URLs, `.env` binding, and the errors encountered during the first working setup.
+
+Official registration entry points:
+
+- [Google Cloud Console](https://console.cloud.google.com/) → Google Auth Platform → Clients
+- [Microsoft Azure Portal](https://portal.azure.com/) → Microsoft Entra ID → App registrations
+
+These are application credentials, not calendar-account passwords. Microsoft values come from **Entra App registrations**, not Microsoft Teams. Copy or update `.env` with credentials created in your own test applications:
 
 ```dotenv
 PUBLIC_BASE_URL=https://calendar.example.com
+SOURCE_PUBLIC_BASE_URL=https://calendar.example.com
 SESSION_COOKIE_SECURE=true
 
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
+GOOGLE_CLIENT_ID='Google OAuth Client ID'
+GOOGLE_CLIENT_SECRET='Google OAuth Client secret'
 
-MICROSOFT_CLIENT_ID=
-MICROSOFT_CLIENT_SECRET=
-MICROSOFT_TENANT=common
+MICROSOFT_CLIENT_ID='Application (client) ID'
+MICROSOFT_CLIENT_SECRET='Client secret Value'
+MICROSOFT_TENANT=consumers
 ```
+
+Microsoft tenant selection:
+
+| App registration account type | `MICROSOFT_TENANT` |
+| --- | --- |
+| Personal Microsoft accounts only (Outlook/Hotmail/MSN) | `consumers` |
+| Work/school directories and personal Microsoft accounts | `common` |
+| One organization only | its Directory (tenant) ID |
+
+For Microsoft, `MICROSOFT_CLIENT_ID` is **Application (client) ID**, not Object ID or Directory ID. `MICROSOFT_CLIENT_SECRET` is the secret **Value**, not the UUID-shaped Secret ID. The Value is normally shown only when the secret is created.
 
 Register these exact redirect URIs:
 
 - Google: `https://calendar.example.com/api/oauth/google/callback`
 - Microsoft: `https://calendar.example.com/api/oauth/microsoft/callback`
 
-For local browser testing, keep `PUBLIC_BASE_URL=http://localhost:8080` and register these additional Web redirect URIs in the same test applications:
+For local browser testing, use `PUBLIC_BASE_URL=http://localhost:8080` in Docker mode or `SOURCE_PUBLIC_BASE_URL=http://localhost:8080` in source mode, and register these Web redirect URIs in the same test applications:
 
 - Google: `http://localhost:8080/api/oauth/google/callback`
 - Microsoft: `http://localhost:8080/api/oauth/microsoft/callback`
 
 The connection buttons remain disabled when the corresponding Client ID or Client Secret is empty. After changing `.env`, recreate the API container with `./scripts/manage.sh build`, or restart source mode with `./scripts/manage-source.sh restart`.
+
+Google test projects must add the actual authorizing Gmail address under **Google Auth Platform → Audience → Test users**. Otherwise Google returns `Error 403: access_denied`. Testing-mode authorizations that request Calendar access can expire after seven days; use testing mode for the MVP and complete the appropriate production/verification work before opening the integration to other users.
+
+For localhost testing, the browser and Auto Calendar must run on the same computer. For VPS or remote-user access, configure a fixed public HTTPS domain through Cloudflare Tunnel or a reverse proxy, update `PUBLIC_BASE_URL`/`SOURCE_PUBLIC_BASE_URL`, restart the service, and register the newly generated callbacks at both providers. Keep FastAPI port `8000` private.
 
 OAuth consent happens in the user's browser. Client secrets and refresh tokens remain on the server; refresh tokens are encrypted before being stored in the application database. The server then refreshes access tokens and synchronizes the selected calendar on demand or at the configured interval.
 
@@ -355,33 +385,63 @@ docker compose down
 
 启动后访问 [http://localhost:8080](http://localhost:8080)。源码模式与 Docker 模式不能同时占用 `8080` 端口，启动其中一种之前需要先停止另一种。如需使用本机 PostgreSQL，可在 `.env` 中设置 `SOURCE_DATABASE_URL`。
 
+菜单中的“Alembic 迁移完成”只表示数据库表结构已升级，并不会自动把 PostgreSQL 业务数据复制到 SQLite。若要让源码模式一次性继承当前 Docker 数据，请在菜单选择“从 Docker PostgreSQL 导入数据”，或者运行：
+
+```bash
+./scripts/manage-source.sh import-docker
+```
+
+导入器会先停止源码服务、为当前 SQLite 创建带时间戳的备份，然后复制用户、酒店、房间、事件、Session、审计记录和加密的日历连接，最后重新启动源码服务。Docker PostgreSQL 与 SQLite 仍是两套独立数据库，之后发生的新修改不会自动在两边同步。
+
 ### OAuth 配置
 
-在 `.env` 中填写自己测试项目的 OAuth 凭据：
+启动 Auto Calendar 后，可直接打开内置图文教程：[http://localhost:8080/oauth-guide](http://localhost:8080/oauth-guide)。日历连接页面也提供该入口。教程包含目前实际的 Google Cloud、Microsoft Azure/Entra 页面截图、localhost/公网回调、`.env` 参数绑定，以及第一次配置时踩过的错误。
+
+官方注册网址：
+
+- [Google Cloud Console](https://console.cloud.google.com/) → Google Auth Platform → Clients
+- [Microsoft Azure Portal](https://portal.azure.com/) → Microsoft Entra ID → App registrations
+
+这里创建的是 Auto Calendar 的“应用凭据”，不是日历账号密码。Microsoft 参数来自 **Entra 应用注册**，不是 Microsoft Teams。在 `.env` 中填写自己测试应用生成的凭据：
 
 ```dotenv
 PUBLIC_BASE_URL=https://calendar.example.com
+SOURCE_PUBLIC_BASE_URL=https://calendar.example.com
 SESSION_COOKIE_SECURE=true
 
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
+GOOGLE_CLIENT_ID='Google OAuth Client ID'
+GOOGLE_CLIENT_SECRET='Google OAuth Client secret'
 
-MICROSOFT_CLIENT_ID=
-MICROSOFT_CLIENT_SECRET=
-MICROSOFT_TENANT=common
+MICROSOFT_CLIENT_ID='Application (client) ID'
+MICROSOFT_CLIENT_SECRET='Client secret 的 Value'
+MICROSOFT_TENANT=consumers
 ```
+
+Microsoft Tenant 选择规则：
+
+| App registration 支持的账号类型 | `MICROSOFT_TENANT` |
+| --- | --- |
+| 仅个人 Microsoft 账号（Outlook/Hotmail/MSN） | `consumers` |
+| 企业/学校目录 + 个人 Microsoft 账号 | `common` |
+| 仅一个企业/学校组织 | 该组织的 Directory (tenant) ID |
+
+`MICROSOFT_CLIENT_ID` 必须填写 **Application (client) ID**，不能填写 Object ID 或 Directory ID；`MICROSOFT_CLIENT_SECRET` 必须填写 Client secret 的 **Value**，不能填写 UUID 形式的 Secret ID。Value 通常只在创建密钥时完整显示一次。
 
 在服务商后台精确登记以下 Redirect URI：
 
 - Google：`https://calendar.example.com/api/oauth/google/callback`
 - Microsoft：`https://calendar.example.com/api/oauth/microsoft/callback`
 
-如需在本地浏览器测试，请保留`PUBLIC_BASE_URL=http://localhost:8080`，并在同一套测试应用中增加以下 Web Redirect URI：
+如需在本地浏览器测试，Docker 模式使用 `PUBLIC_BASE_URL=http://localhost:8080`，源码模式使用 `SOURCE_PUBLIC_BASE_URL=http://localhost:8080`，并在同一套测试应用中增加以下 Web Redirect URI：
 
 - Google：`http://localhost:8080/api/oauth/google/callback`
 - Microsoft：`http://localhost:8080/api/oauth/microsoft/callback`
 
 只要对应的 Client ID 或 Client Secret 为空，连接按钮就会保持禁用。修改 `.env` 后，Docker 模式运行 `./scripts/manage.sh build` 重建 API 容器；源码模式运行 `./scripts/manage-source.sh restart`。
+
+Google 测试应用必须在 **Google Auth Platform → Audience → Test users** 中加入实际用于授权的 Gmail，否则会出现 `Error 403: access_denied`。申请 Calendar 权限的 Testing 授权可能在 7 天后失效；个人 MVP 先用测试模式跑通，正式开放其他用户前再完成相应的 Production/验证工作。
+
+localhost 只适合浏览器与 Auto Calendar 位于同一台电脑的测试。部署到 VPS 或供异地用户访问时，需要通过 Cloudflare Tunnel 或反向代理准备固定公网 HTTPS 域名，更新 `PUBLIC_BASE_URL`/`SOURCE_PUBLIC_BASE_URL`，重启服务，然后把新 callback 逐字登记到两个供应商后台。FastAPI 的 `8000` 端口应继续留在内网。
 
 OAuth 登录和授权在用户浏览器中完成。Client Secret 与 refresh token 只保存在服务端，refresh token 加密后写入应用数据库。服务器随后可以刷新 access token，并按照配置周期或手动触发同步所选日历。
 

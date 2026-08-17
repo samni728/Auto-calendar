@@ -138,6 +138,8 @@ class ConnectionResponse(BaseModel):
     id: str | None = None
     provider: str
     configured: bool
+    configuration_issue: str | None = None
+    redirect_uri: str
     status: str
     account_email: str | None = None
     selected_calendar_id: str | None = None

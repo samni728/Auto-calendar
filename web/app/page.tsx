@@ -7,10 +7,11 @@ type Room = { id: string; code: string; room_type: string; floor: string };
 type RoomDraft = { code: string; room_type: string; floor: string };
 type HotelEvent = { id: string; room_id: string | null; title: string; guest_name: string; event_type: string; status: string; start_date: string; end_date: string; notes: string; source_system: string; sync_status: string };
 type Dashboard = { workspace_name: string; timezone: string; rooms: Room[]; events: HotelEvent[]; unassigned_count: number };
-type Connection = { provider: "google" | "microsoft"; configured: boolean; status: string; account_email: string | null; selected_calendar_id: string | null; selected_calendar_name: string | null; last_sync_at: string | null; last_error: string | null };
+type Connection = { provider: "google" | "microsoft"; configured: boolean; configuration_issue: string | null; redirect_uri: string; status: string; account_email: string | null; selected_calendar_id: string | null; selected_calendar_name: string | null; last_sync_at: string | null; last_error: string | null };
 type Calendar = { id: string; name: string; primary: boolean };
 type TimelineScale = "day" | "week";
 type DragMode = "move" | "start" | "end";
+type AppView = "overview" | "connections" | "settings";
 
 const TIMEZONES = [
   ["Asia/Shanghai", "中国标准时间（广州 / 上海）"],
@@ -19,6 +20,36 @@ const TIMEZONES = [
   ["Europe/London", "英国时间"],
   ["Asia/Tokyo", "日本时间"],
 ] as const;
+
+const OAUTH_SETUP = {
+  google: {
+    name: "Google Calendar",
+    consoleUrl: "https://console.cloud.google.com/auth/clients",
+    envNames: "GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET",
+  },
+  microsoft: {
+    name: "Microsoft 365",
+    consoleUrl: "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+    envNames: "MICROSOFT_CLIENT_ID / MICROSOFT_CLIENT_SECRET",
+  },
+} as const;
+
+const isLocalAddress = (value: string) => value.startsWith("http://localhost:") || value.startsWith("http://127.0.0.1:");
+
+function OAuthDeploymentGuide({ connections }: { connections: Connection[] }) {
+  if (!connections.length) return null;
+  const callback = connections[0].redirect_uri;
+  const localOnly = isLocalAddress(callback);
+  const baseUrl = callback.split("/api/oauth/")[0];
+  return <section className={`oauth-guide-entry ${localOnly ? "local-only" : "public-ready"}`}>
+    <div>
+      <span>{localOnly ? "当前使用 localhost · 适合本机测试" : "当前使用公网 HTTPS 回调"}</span>
+      <h2>第一次配置？按图完成 Google / Microsoft OAuth</h2>
+      <p>{localOnly ? "localhost 在同一台电脑上可以正常授权；迁移到 VPS 或异地访问时再换成固定公网 HTTPS 域名。" : `当前应用入口为 ${baseUrl}，供应商后台登记的 callback 必须与本页逐字一致。`}</p>
+    </div>
+    <a href="/oauth-guide">打开完整图文教程 <b>→</b></a>
+  </section>;
+}
 
 const api = async <T,>(path: string, options: RequestInit = {}): Promise<T> => {
   const response = await fetch(path, { ...options, credentials: "include", headers: { "Content-Type": "application/json", ...options.headers } });
@@ -40,6 +71,19 @@ const today = (timeZone = "Asia/Shanghai") => {
   return new Date(number("year"), number("month") - 1, number("day"));
 };
 const dateLabel = (value: Date) => new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric", weekday: "short" }).format(value);
+const initialNavigation = (): { view: AppView; notice: string; error: string; shouldCleanUrl: boolean } => {
+  if (typeof window === "undefined") return { view: "overview", notice: "", error: "", shouldCleanUrl: false };
+  const params = new URLSearchParams(window.location.search);
+  const requestedView = params.get("view");
+  const oauthResult = params.get("oauth");
+  const view: AppView = oauthResult || requestedView === "connections" ? "connections" : requestedView === "settings" ? "settings" : "overview";
+  return {
+    view,
+    notice: oauthResult === "connected" ? "日历账号授权成功，请选择需要同步的日历。" : "",
+    error: oauthResult === "denied" ? "日历授权未完成。请检查账号类型、测试用户和回调地址；完整排错步骤见图文教程。" : "",
+    shouldCleanUrl: Boolean(requestedView || oauthResult),
+  };
+};
 
 function Login({ onLogin }: { onLogin: (user: User) => void }) {
   const [email, setEmail] = useState("admin@autocalendar.app");
@@ -110,14 +154,35 @@ function SettingsPage({ user, rooms, onUser, onRoomsChanged, onLogout }: { user:
 }
 
 function Connections() {
-  const [items, setItems] = useState<Connection[]>([]); const [calendars, setCalendars] = useState<Record<string, Calendar[]>>({}); const [message, setMessage] = useState("");
+  const [items, setItems] = useState<Connection[]>([]); const [calendars, setCalendars] = useState<Record<string, Calendar[]>>({}); const [message, setMessage] = useState(""); const [copied, setCopied] = useState<string | null>(null);
   const load = useCallback(() => api<Connection[]>("/api/connections").then(setItems).catch((error) => setMessage(error.message)), []);
   useEffect(() => { load(); }, [load]);
   const connect = async (provider: string) => { try { const result = await api<{ authorization_url: string }>(`/api/oauth/${provider}/start`, { method: "POST" }); window.location.assign(result.authorization_url); } catch (reason) { setMessage((reason as Error).message); } };
   const getCalendars = async (provider: string) => { try { const available = await api<Calendar[]>(`/api/connections/${provider}/calendars`); setCalendars((current) => ({ ...current, [provider]: available })); } catch (reason) { setMessage((reason as Error).message); } };
   const selectCalendar = async (provider: string, value: string) => { const item = calendars[provider]?.find((calendar) => calendar.id === value); if (!item) return; try { await api(`/api/connections/${provider}/calendar`, { method: "PUT", body: JSON.stringify({ calendar_id: item.id, calendar_name: item.name }) }); await load(); setMessage(`已选择 ${item.name}`); } catch (reason) { setMessage((reason as Error).message); } };
   const sync = async (provider: string) => { try { const result = await api<{ synced: number }>(`/api/connections/${provider}/sync`, { method: "POST" }); setMessage(`同步完成：读取 ${result.synced} 条变更`); await load(); } catch (reason) { setMessage((reason as Error).message); } };
-  return <section className="connections-page"><div className="page-heading"><div><p className="eyebrow">外部日历</p><h1>连接与同步</h1><p>授权只发生在 Google 或 Microsoft 页面，Client Secret 与 refresh token 只保存在服务端。</p></div></div>{message && <p className="notice-bar">{message}</p>}<div className="connection-grid">{items.map((item) => { const name = item.provider === "google" ? "Google Calendar" : "Microsoft 365"; return <article className="connection-card" key={item.provider}><div className={`provider-logo ${item.provider}`}>{item.provider === "google" ? "G" : "M"}</div><div className="connection-title"><h2>{name}</h2><span className={`status ${item.status}`}>{item.status === "connected" ? "已连接" : "未连接"}</span></div><p>{item.account_email || (item.configured ? "可以开始浏览器授权" : "服务端尚未填写 OAuth 配置")}</p>{item.selected_calendar_name && <p className="selected-calendar">同步日历：{item.selected_calendar_name}</p>}{item.status === "connected" ? <><div className="connection-actions"><button className="ghost-button" onClick={() => getCalendars(item.provider)}>选择日历</button><button className="primary-button text-button" onClick={() => sync(item.provider)} disabled={!item.selected_calendar_id}>立即同步</button></div>{calendars[item.provider] && <select value={item.selected_calendar_id || ""} onChange={(event) => selectCalendar(item.provider, event.target.value)}><option value="">请选择一个日历</option>{calendars[item.provider].map((calendar) => <option value={calendar.id} key={calendar.id}>{calendar.name}{calendar.primary ? "（主日历）" : ""}</option>)}</select>}</> : <button className="primary-button wide text-button" disabled={!item.configured} onClick={() => connect(item.provider)}>连接 {name}</button>}</article>; })}</div><article className="architecture-note"><strong>同步链路</strong><span>浏览器授权 → 服务端保存 refresh token → 定时/手动读取日历 → 待分配区 → 绑定房间</span></article></section>;
+  const copyCallback = async (item: Connection) => { try { await navigator.clipboard.writeText(item.redirect_uri); setCopied(item.provider); window.setTimeout(() => setCopied(null), 1800); } catch { setMessage("浏览器未允许自动复制，请手动选择回调地址复制。"); } };
+  return <section className="connections-page">
+    <div className="page-heading"><div><p className="eyebrow">外部日历</p><h1>连接你自己的日历</h1><p>先由部署管理员登记一次 Auto Calendar 应用；配置完成后，每位用户只需在 Google 或 Microsoft 网页登录自己的账号并授权。</p></div></div>
+    <OAuthDeploymentGuide connections={items} />
+    {message && <p className="notice-bar">{message}</p>}
+    <div className="connection-grid">{items.map((item) => {
+      const setup = OAUTH_SETUP[item.provider];
+      return <article className="connection-card" key={item.provider}>
+        <div className={`provider-logo ${item.provider}`}>{item.provider === "google" ? "G" : "M"}</div>
+        <div className="connection-title"><h2>{setup.name}</h2><span className={`status ${item.status}`}>{item.status === "connected" ? "已连接" : "未连接"}</span></div>
+        <p>{item.account_email || (item.configured ? "应用凭据已就绪，可以授权你自己的日历账号。" : item.configuration_issue)}</p>
+        {item.selected_calendar_name && <p className="selected-calendar">同步日历：{item.selected_calendar_name}</p>}
+        {!item.configured && <div className="oauth-setup-guide">
+          <p>需要在供应商后台创建 Web OAuth 应用，再把生成的 <code>{setup.envNames}</code> 写入服务器。</p>
+          <div className="callback-copy"><code>{item.redirect_uri}</code><button type="button" onClick={() => copyCallback(item)}>{copied === item.provider ? "已复制" : "复制 callback"}</button></div>
+          <div className="setup-links"><a href={`/oauth-guide#${item.provider}`}>查看图文教程</a><a href={setup.consoleUrl} target="_blank" rel="noreferrer">打开官方控制台 ↗</a></div>
+        </div>}
+        {item.status === "connected" ? <><div className="connection-actions"><button className="ghost-button" onClick={() => getCalendars(item.provider)}>选择日历</button><button className="primary-button text-button" onClick={() => sync(item.provider)} disabled={!item.selected_calendar_id}>立即同步</button></div>{calendars[item.provider] && <select value={item.selected_calendar_id || ""} onChange={(event) => selectCalendar(item.provider, event.target.value)}><option value="">请选择一个日历</option>{calendars[item.provider].map((calendar) => <option value={calendar.id} key={calendar.id}>{calendar.name}{calendar.primary ? "（主日历）" : ""}</option>)}</select>}</> : <button className="primary-button wide text-button" disabled={!item.configured} onClick={() => connect(item.provider)}>{item.configured ? `授权我的 ${setup.name}` : "完成上面配置后即可授权"}</button>}
+      </article>;
+    })}</div>
+    <article className="architecture-note"><strong>同步链路</strong><span>你在供应商网页授权自己的账号 → 服务端加密保存 refresh token → 定时/手动读取日历 → 待分配区 → 绑定房间</span></article>
+  </section>;
 }
 
 function EventDialog({ rooms, event, startDate, onClose, onSaved }: { rooms: Room[]; event?: HotelEvent | null; startDate: Date; onClose: () => void; onSaved: () => void }) {
@@ -154,8 +219,9 @@ function DashboardView({ dashboard, startDate, scale, onStartDate, onScale, onEd
 }
 
 export default function Home() {
-  const [user, setUser] = useState<User | null | undefined>(undefined); const [dashboard, setDashboard] = useState<Dashboard | null>(null); const [view, setView] = useState<"overview" | "connections" | "settings">("overview"); const [scale, setScale] = useState<TimelineScale>("day"); const [startDate, setStartDate] = useState(today()); const [dialog, setDialog] = useState<HotelEvent | null | "new">(null); const [error, setError] = useState("");
+  const [navigation] = useState(initialNavigation); const [user, setUser] = useState<User | null | undefined>(undefined); const [dashboard, setDashboard] = useState<Dashboard | null>(null); const [view, setView] = useState<AppView>(navigation.view); const [scale, setScale] = useState<TimelineScale>("day"); const [startDate, setStartDate] = useState(today()); const [dialog, setDialog] = useState<HotelEvent | null | "new">(null); const [error, setError] = useState(navigation.error); const [notice] = useState(navigation.notice);
   const loadDashboard = useCallback(async () => { try { setDashboard(await api<Dashboard>(`/api/dashboard?start=${iso(startDate)}&days=${scale === "day" ? 14 : 56}`)); setError(""); } catch (reason) { setError((reason as Error).message); } }, [scale, startDate]);
+  useEffect(() => { if (navigation.shouldCleanUrl) window.history.replaceState({}, "", "/"); }, [navigation.shouldCleanUrl]);
   useEffect(() => { api<User>("/api/auth/me").then((current) => { setUser(current); setStartDate(today(current.timezone)); }).catch(() => setUser(null)); }, []);
   useEffect(() => {
     if (!user?.onboarding_completed) return;
@@ -170,7 +236,7 @@ export default function Home() {
   if (!user) return <Login onLogin={(loggedIn) => { setUser(loggedIn); setStartDate(today(loggedIn.timezone)); }} />;
   if (!user.onboarding_completed) return <Onboarding user={user} onComplete={(completed) => { updateUser(completed); setView("overview"); }} />;
   return <main className="app-shell"><aside className="sidebar"><div className="brand-mark"><span className="brand-symbol">A</span><span><strong>Auto Calendar</strong><small>酒店运营中心</small></span></div><nav className="main-nav"><button className={`nav-item ${view === "overview" ? "active" : ""}`} onClick={() => setView("overview")}><span>⌂</span>房态总览</button><button className={`nav-item ${view === "connections" ? "active" : ""}`} onClick={() => setView("connections")}><span>↗</span>日历连接</button><button className={`nav-item ${view === "settings" ? "active" : ""}`} onClick={() => setView("settings")}><span>⚙</span>账号与酒店</button></nav><div className="sidebar-bottom"><button className="account-card" onClick={() => setView("settings")} title="打开账号与酒店设置"><span className="avatar">{user.display_name.slice(0, 1)}</span><span><strong>{user.display_name}</strong><small>{user.job_title} · {user.workspace_name}</small></span><i>›</i></button><button className="sidebar-logout" onClick={logout}>退出登录</button></div></aside>
-    <section className="workspace">{user.must_change_password && view !== "settings" && <button className="password-alert" onClick={() => setView("settings")}>首次登录请尽快修改临时密码 →</button>}{error && <p className="notice-bar error">{error}</p>}{view === "overview" && dashboard && <DashboardView dashboard={dashboard} startDate={startDate} scale={scale} onStartDate={setStartDate} onScale={setScale} onEdit={setDialog} onNew={() => setDialog("new")} onEventDates={updateEventDates} onOpenSettings={() => setView("settings")} />}{view === "connections" && <Connections />}{view === "settings" && <SettingsPage user={user} rooms={dashboard?.rooms || []} onUser={updateUser} onRoomsChanged={loadDashboard} onLogout={logout} />}</section>
+    <section className="workspace">{user.must_change_password && view !== "settings" && <button className="password-alert" onClick={() => setView("settings")}>首次登录请尽快修改临时密码 →</button>}{notice && <p className="notice-bar success">{notice}</p>}{error && <p className="notice-bar error">{error}</p>}{view === "overview" && dashboard && <DashboardView dashboard={dashboard} startDate={startDate} scale={scale} onStartDate={setStartDate} onScale={setScale} onEdit={setDialog} onNew={() => setDialog("new")} onEventDates={updateEventDates} onOpenSettings={() => setView("settings")} />}{view === "connections" && <Connections />}{view === "settings" && <SettingsPage user={user} rooms={dashboard?.rooms || []} onUser={updateUser} onRoomsChanged={loadDashboard} onLogout={logout} />}</section>
     <nav className="mobile-nav" aria-label="移动端主导航"><button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}><span>⌂</span>房态</button><button className={view === "connections" ? "active" : ""} onClick={() => setView("connections")}><span>↗</span>连接</button><button className="mobile-add" aria-label="新建事件" onClick={() => setDialog("new")}>＋</button><button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}><span>⚙</span>设置</button></nav>
     {dialog && <EventDialog rooms={dashboard?.rooms || []} event={dialog === "new" ? null : dialog} startDate={startDate} onClose={() => setDialog(null)} onSaved={loadDashboard} />}
   </main>;

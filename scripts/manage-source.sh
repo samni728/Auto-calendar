@@ -190,12 +190,38 @@ run_migrations() {
   load_environment || return 1
   ensure_dependencies || return 1
   mkdir -p "$LOG_DIR"
-  info "正在执行数据库迁移（${SOURCE_DATABASE_LABEL}）…"
+  info "正在执行数据库结构迁移（${SOURCE_DATABASE_LABEL}）…"
   if (cd "$SERVER_DIR" && "$VENV_DIR/bin/python" -m alembic upgrade head) >> "$API_LOG" 2>&1; then
-    success "数据库迁移完成。"
+    success "数据库结构迁移完成（这里只升级表结构，不复制 Docker 业务数据）。"
   else
     error "数据库迁移失败，请查看 API 日志。"
     tail -n 30 "$API_LOG" 2>/dev/null || true
+    return 1
+  fi
+}
+
+import_docker_data() {
+  load_environment || return 1
+  ensure_dependencies || return 1
+  if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
+    error "从 Docker 导入数据需要本机安装 Docker Compose。"
+    return 1
+  fi
+  warn "这会用当前项目 Docker PostgreSQL 的数据覆盖源码 SQLite 数据库。"
+  warn "导入前会自动为现有 SQLite 创建带时间戳的备份。"
+  if [[ -t 0 ]]; then
+    local answer
+    read -r -p "确认继续？[y/N] " answer
+    [[ "$answer" =~ ^[Yy]$ ]] || { info "已取消导入。"; return 0; }
+  fi
+  stop_services
+  run_migrations || return 1
+  info "正在从 Docker PostgreSQL 导入账号、酒店、房间、事件和连接数据…"
+  if "$VENV_DIR/bin/python" "$PROJECT_DIR/scripts/import-docker-data.py"; then
+    success "Docker 数据已导入源码 SQLite。"
+    start_services
+  else
+    error "导入失败；原 SQLite 备份仍保留在 .runtime/source。"
     return 1
   fi
 }
@@ -336,7 +362,8 @@ print_help() {
   ./scripts/manage-source.sh restart         重启源码服务
   ./scripts/manage-source.sh status          查看运行状态
   ./scripts/manage-source.sh logs [api|web]  查看实时日志
-  ./scripts/manage-source.sh migrate         执行数据库迁移
+  ./scripts/manage-source.sh migrate         执行数据库结构迁移
+  ./scripts/manage-source.sh import-docker   从 Docker PostgreSQL 导入业务数据
 
 源码模式默认使用 .runtime/source/autocalendar.db（SQLite）。
 如需本地 PostgreSQL，请在 .env 设置 SOURCE_DATABASE_URL。
@@ -347,7 +374,8 @@ run_command() {
   case "${1:-}" in
     install|setup) install_dependencies ;; start) start_services ;; stop) stop_services ;;
     restart) restart_services ;; status|ps) show_status ;; logs) follow_logs "${2:-all}" ;;
-    migrate) run_migrations ;; help|-h|--help) print_help ;;
+    migrate) run_migrations ;; import-docker|import) import_docker_data ;;
+    help|-h|--help) print_help ;;
     *) error "未知命令：${1:-}"; print_help; return 2 ;;
   esac
 }
@@ -357,7 +385,7 @@ interactive_menu() {
     print_header
     printf "  1) 启动源码服务\n  2) 安装 / 更新依赖\n  3) 停止源码服务\n"
     printf "  4) 重启源码服务\n  5) 查看运行状态\n  6) 查看实时日志\n"
-    printf "  7) 执行数据库迁移\n  0) 退出\n\n"
+    printf "  7) 执行数据库结构迁移\n  8) 从 Docker PostgreSQL 导入数据\n  0) 退出\n\n"
     local choice
     read -r -p "请输入编号：" choice || { printf "\n"; return 0; }
     printf "\n"
@@ -365,8 +393,9 @@ interactive_menu() {
       1) start_services; pause_menu ;; 2) install_dependencies; pause_menu ;;
       3) stop_services; pause_menu ;; 4) restart_services; pause_menu ;;
       5) show_status; pause_menu ;; 6) logs_menu ;; 7) run_migrations; pause_menu ;;
+      8) import_docker_data; pause_menu ;;
       0) success "已退出源码管理菜单。"; return 0 ;;
-      *) warn "请输入 0–7 之间的编号。"; pause_menu ;;
+      *) warn "请输入 0–8 之间的编号。"; pause_menu ;;
     esac
   done
 }

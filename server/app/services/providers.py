@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..models import ProviderConnection, TimelineEvent
 from ..security import decrypt_secret, encrypt_secret
+from ..time_utils import as_utc
 
 GOOGLE_SCOPES = [
     "openid",
@@ -28,13 +29,29 @@ MICROSOFT_SCOPES = [
 ]
 
 
-def provider_configured(provider: str) -> bool:
+def provider_configuration_issue(provider: str) -> str | None:
     settings = get_settings()
     if provider == "google":
-        return bool(settings.google_client_id and settings.google_client_secret)
-    if provider == "microsoft":
-        return bool(settings.microsoft_client_id and settings.microsoft_client_secret)
-    return False
+        client_id = settings.google_client_id.strip()
+        client_secret = settings.google_client_secret.strip()
+    elif provider == "microsoft":
+        client_id = settings.microsoft_client_id.strip()
+        client_secret = settings.microsoft_client_secret.strip()
+    else:
+        return "不支持该日历服务"
+    if client_id.startswith(("http://", "https://")):
+        return "Client ID 误填成了回调地址；请填写供应商生成的 Client ID"
+    if not client_id and not client_secret:
+        return "尚未填写 Client ID 和 Client Secret"
+    if not client_id:
+        return "尚未填写 Client ID"
+    if not client_secret:
+        return "尚未填写 Client Secret"
+    return None
+
+
+def provider_configured(provider: str) -> bool:
+    return provider_configuration_issue(provider) is None
 
 
 def redirect_uri(provider: str) -> str:
@@ -156,7 +173,7 @@ async def valid_access_token(connection: ProviderConnection, db: Session) -> str
     if (
         connection.access_token_encrypted
         and connection.token_expires_at
-        and connection.token_expires_at > now + timedelta(minutes=2)
+        and as_utc(connection.token_expires_at) > now + timedelta(minutes=2)
     ):
         return decrypt_secret(connection.access_token_encrypted)
     return await refresh_access_token(connection, db)

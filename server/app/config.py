@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     google_client_secret: str = ""
     microsoft_client_id: str = ""
     microsoft_client_secret: str = ""
-    microsoft_tenant: str = "common"
+    microsoft_tenant: str = "consumers"
 
     @property
     def cors_origin_list(self) -> list[str]:
