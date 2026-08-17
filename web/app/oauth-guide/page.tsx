@@ -174,7 +174,7 @@ SESSION_COOKIE_SECURE=true`}</pre></article>
           <details><summary>需要先到 Google 或 Outlook 手工创建吗？</summary><p>不需要。最简单的路径就是直接使用 Auto Calendar 的“创建专用日历”。只有你想复用一个已经存在的日历时，才需要点击“选择已有日历”。</p></details>
           <details open><summary>为什么日历 ID 和 tag 不写进 .env？</summary><p><Code>.env</Code> 只保存部署级 OAuth Client ID / Secret。选择哪个日历、双向还是只读、使用什么分类，都是每个登录用户自己的设置，会安全地保存在数据库。</p></details>
           <details><summary>四种同步模式如何选择？</summary><p><strong>双向</strong>用于三端连续同步；<strong>只读</strong>只把官方日历导入 Auto Calendar；<strong>只写</strong>只把酒店事件发布出去；<strong>暂停</strong>保留连接但停止同步。</p></details>
-          <details><summary>为什么 Google 创建专用日历提示权限不足？</summary><p>本版本新增了创建日历权限。旧 Google 授权令牌不含该 scope 时，请在连接页点击“重新授权”，同意新增权限后再创建。</p></details>
+          <details><summary>为什么 Google 创建专用日历提示权限不足？</summary><p>旧 Google 授权令牌可能没有“管理日历”权限。现在直接再次点击“创建专用日历”即可：系统会自动打开 Google 补充授权，返回后自动继续完成刚才的创建操作。也可以使用卡片底部的“重新授权 Google”。</p></details>
         </div>
       </section>
 

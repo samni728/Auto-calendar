@@ -13,6 +13,9 @@ type Calendar = { id: string; name: string; primary: boolean };
 type TimelineScale = "day" | "week";
 type DragMode = "move" | "start" | "end";
 type AppView = "overview" | "connections" | "settings";
+type OAuthResult = "" | "connected" | "denied";
+
+const PENDING_GOOGLE_CALENDAR = "auto-calendar.pending-google-calendar";
 
 const TIMEZONES = [
   ["Asia/Shanghai", "中国标准时间（广州 / 上海）"],
@@ -72,8 +75,8 @@ const today = (timeZone = "Asia/Shanghai") => {
   return new Date(number("year"), number("month") - 1, number("day"));
 };
 const dateLabel = (value: Date) => new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric", weekday: "short" }).format(value);
-const initialNavigation = (): { view: AppView; notice: string; error: string; shouldCleanUrl: boolean } => {
-  if (typeof window === "undefined") return { view: "overview", notice: "", error: "", shouldCleanUrl: false };
+const initialNavigation = (): { view: AppView; notice: string; error: string; oauthResult: OAuthResult; shouldCleanUrl: boolean } => {
+  if (typeof window === "undefined") return { view: "overview", notice: "", error: "", oauthResult: "", shouldCleanUrl: false };
   const params = new URLSearchParams(window.location.search);
   const requestedView = params.get("view");
   const oauthResult = params.get("oauth");
@@ -82,6 +85,7 @@ const initialNavigation = (): { view: AppView; notice: string; error: string; sh
     view,
     notice: oauthResult === "connected" ? "日历账号授权成功，请选择需要同步的日历。" : "",
     error: oauthResult === "denied" ? "日历授权未完成。请检查账号类型、测试用户和回调地址；完整排错步骤见图文教程。" : "",
+    oauthResult: oauthResult === "connected" || oauthResult === "denied" ? oauthResult : "",
     shouldCleanUrl: Boolean(requestedView || oauthResult),
   };
 };
@@ -154,15 +158,33 @@ function SettingsPage({ user, rooms, onUser, onRoomsChanged, onLogout }: { user:
   </section>;
 }
 
-function Connections() {
+function Connections({ oauthResult }: { oauthResult: OAuthResult }) {
   const [items, setItems] = useState<Connection[]>([]); const [calendars, setCalendars] = useState<Record<string, Calendar[]>>({}); const [calendarNames, setCalendarNames] = useState<Record<string, string>>({ google: "Auto Calendar · 酒店订房", microsoft: "Auto Calendar · 酒店订房" }); const [message, setMessage] = useState(""); const [copied, setCopied] = useState<string | null>(null); const [busy, setBusy] = useState<string | null>(null);
   const load = useCallback(() => api<Connection[]>("/api/connections").then((connections) => { setItems(connections); setCalendarNames((current) => ({ ...current, ...Object.fromEntries(connections.filter((item) => item.selected_calendar_name).map((item) => [item.provider, item.selected_calendar_name!])) })); }).catch((error) => setMessage(error.message)), []);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (oauthResult !== "connected") return;
+    const pendingName = window.sessionStorage.getItem(PENDING_GOOGLE_CALENDAR);
+    if (!pendingName) return;
+    window.sessionStorage.removeItem(PENDING_GOOGLE_CALENDAR);
+    setCalendarNames((current) => ({ ...current, google: pendingName }));
+    setBusy("create-google");
+    setMessage("Google 已补充授权，正在继续创建刚才的专用日历…");
+    api("/api/connections/google/calendars", { method: "POST", body: JSON.stringify({ calendar_name: pendingName }) })
+      .then(async () => {
+        const available = await api<Calendar[]>("/api/connections/google/calendars");
+        setCalendars((current) => ({ ...current, google: available }));
+        await load();
+        setMessage(`已在 Google 创建并选中专用日历“${pendingName}”`);
+      })
+      .catch((reason) => setMessage(`Google 已重新授权，但自动创建仍未完成：${(reason as Error).message}`))
+      .finally(() => setBusy(null));
+  }, [load, oauthResult]);
   const connect = async (provider: string) => { try { const result = await api<{ authorization_url: string }>(`/api/oauth/${provider}/start`, { method: "POST" }); window.location.assign(result.authorization_url); } catch (reason) { setMessage((reason as Error).message); } };
   const getCalendars = async (provider: string) => { try { const available = await api<Calendar[]>(`/api/connections/${provider}/calendars`); setCalendars((current) => ({ ...current, [provider]: available })); } catch (reason) { setMessage((reason as Error).message); } };
   const saveSettings = async (provider: string, changes: Partial<{ calendar_id: string; calendar_name: string; sync_mode: SyncMode; sync_label: string }> = {}) => { const current = items.find((item) => item.provider === provider); if (!current) return; const calendarId = changes.calendar_id || current.selected_calendar_id; const calendarName = changes.calendar_name || current.selected_calendar_name; if (!calendarId || !calendarName) { setMessage("请先选择或创建专用日历"); return; } try { await api(`/api/connections/${provider}/settings`, { method: "PUT", body: JSON.stringify({ calendar_id: calendarId, calendar_name: calendarName, sync_mode: changes.sync_mode || current.sync_mode, sync_label: changes.sync_label || current.sync_label }) }); await load(); setMessage("同步设置已保存"); } catch (reason) { setMessage((reason as Error).message); } };
   const selectCalendar = async (provider: string, value: string) => { const item = calendars[provider]?.find((calendar) => calendar.id === value); if (item) await saveSettings(provider, { calendar_id: item.id, calendar_name: item.name }); };
-  const createDedicated = async (provider: string) => { const name = calendarNames[provider]?.trim(); if (!name) { setMessage("请输入专用日历名称"); return; } setBusy(`create-${provider}`); try { await api(`/api/connections/${provider}/calendars`, { method: "POST", body: JSON.stringify({ calendar_name: name }) }); await getCalendars(provider); await load(); setMessage(`已在 ${provider === "google" ? "Google" : "Microsoft"} 创建并选中专用日历“${name}”`); } catch (reason) { setMessage((reason as Error).message); } finally { setBusy(null); } };
+  const createDedicated = async (provider: string) => { const name = calendarNames[provider]?.trim(); if (!name) { setMessage("请输入专用日历名称"); return; } setBusy(`create-${provider}`); try { await api(`/api/connections/${provider}/calendars`, { method: "POST", body: JSON.stringify({ calendar_name: name }) }); await getCalendars(provider); await load(); setMessage(`已在 ${provider === "google" ? "Google" : "Microsoft"} 创建并选中专用日历“${name}”`); } catch (reason) { const detail = (reason as Error).message; if (provider === "google" && /insufficient authentication scopes|旧授权需点击/.test(detail)) { window.sessionStorage.setItem(PENDING_GOOGLE_CALENDAR, name); setMessage("Google 旧授权缺少创建日历权限，正在打开补充授权；完成后会自动继续创建。"); await connect("google"); } else { setMessage(detail); } } finally { setBusy(null); } };
   const sync = async (provider: string) => { setBusy(`sync-${provider}`); try { const result = await api<{ synced: number }>(`/api/connections/${provider}/sync`, { method: "POST" }); setMessage(`同步完成：处理 ${result.synced} 条读取或写入变更`); await load(); } catch (reason) { setMessage((reason as Error).message); } finally { setBusy(null); } };
   const syncAll = async () => { setBusy("sync-all"); try { const result = await api<{ synced: Record<string, number>; errors: Record<string, string> }>("/api/connections/sync-all", { method: "POST" }); const total = Object.values(result.synced).reduce((sum, value) => sum + value, 0); const errors = Object.entries(result.errors).map(([provider, detail]) => `${provider}: ${detail}`).join("；"); setMessage(errors ? `已处理 ${total} 条变更；${errors}` : `Google、Microsoft 与 Auto Calendar 已完成一轮同步，共处理 ${total} 条变更`); await load(); } catch (reason) { setMessage((reason as Error).message); } finally { setBusy(null); } };
   const copyCallback = async (item: Connection) => { try { await navigator.clipboard.writeText(item.redirect_uri); setCopied(item.provider); window.setTimeout(() => setCopied(null), 1800); } catch { setMessage("浏览器未允许自动复制，请手动选择回调地址复制。"); } };
@@ -188,7 +210,7 @@ function Connections() {
           <div className="connection-actions"><button className="ghost-button" onClick={() => getCalendars(item.provider)}>选择已有日历</button><button className="primary-button text-button" onClick={() => sync(item.provider)} disabled={!item.selected_calendar_id || busy === `sync-${item.provider}`}>{busy === `sync-${item.provider}` ? "同步中…" : "立即同步"}</button></div>
           {calendars[item.provider] && <label>同步范围<select value={item.selected_calendar_id || ""} onChange={(event) => selectCalendar(item.provider, event.target.value)}><option value="">请选择一个日历</option>{calendars[item.provider].map((calendar) => <option value={calendar.id} key={calendar.id}>{calendar.name}{calendar.primary ? "（主日历）" : ""}</option>)}</select></label>}
           <div className="sync-option-grid"><label>同步方向<select value={item.sync_mode} onChange={(event) => saveSettings(item.provider, { sync_mode: event.target.value as SyncMode })}><option value="two_way">双向同步（推荐）</option><option value="read_only">只读入 Auto Calendar</option><option value="write_only">只写到外部日历</option><option value="disabled">暂停同步</option></select></label><label>分类 / 标识<input value={item.sync_label} onChange={(event) => setItems((current) => current.map((connection) => connection.provider === item.provider ? { ...connection, sync_label: event.target.value } : connection))} onBlur={() => saveSettings(item.provider, { sync_label: item.sync_label })} /></label></div>
-          <div className="reauthorize-row"><span>{item.last_sync_at ? `上次同步：${new Date(item.last_sync_at).toLocaleString("zh-CN")}` : "尚未执行同步"}</span><button onClick={() => connect(item.provider)}>重新授权</button></div>
+          <div className="reauthorize-row"><span>{item.last_sync_at ? `上次同步：${new Date(item.last_sync_at).toLocaleString("zh-CN")}` : "尚未执行同步"}</span><button onClick={() => connect(item.provider)}>{item.provider === "google" ? "重新授权 Google" : "重新授权 Microsoft"}</button></div>
         </div> : <button className="primary-button wide text-button" disabled={!item.configured} onClick={() => connect(item.provider)}>{item.configured ? `授权我的 ${setup.name}` : "完成上面配置后即可授权"}</button>}
       </article>;
     })}</div>
@@ -247,7 +269,7 @@ export default function Home() {
   if (!user) return <Login onLogin={(loggedIn) => { setUser(loggedIn); setStartDate(today(loggedIn.timezone)); }} />;
   if (!user.onboarding_completed) return <Onboarding user={user} onComplete={(completed) => { updateUser(completed); setView("overview"); }} />;
   return <main className="app-shell"><aside className="sidebar"><div className="brand-mark"><span className="brand-symbol">A</span><span><strong>Auto Calendar</strong><small>酒店运营中心</small></span></div><nav className="main-nav"><button className={`nav-item ${view === "overview" ? "active" : ""}`} onClick={() => setView("overview")}><span>⌂</span>房态总览</button><button className={`nav-item ${view === "connections" ? "active" : ""}`} onClick={() => setView("connections")}><span>↗</span>日历连接</button><button className={`nav-item ${view === "settings" ? "active" : ""}`} onClick={() => setView("settings")}><span>⚙</span>账号与酒店</button></nav><div className="sidebar-bottom"><button className="account-card" onClick={() => setView("settings")} title="打开账号与酒店设置"><span className="avatar">{user.display_name.slice(0, 1)}</span><span><strong>{user.display_name}</strong><small>{user.job_title} · {user.workspace_name}</small></span><i>›</i></button><button className="sidebar-logout" onClick={logout}>退出登录</button></div></aside>
-    <section className="workspace">{user.must_change_password && view !== "settings" && <button className="password-alert" onClick={() => setView("settings")}>首次登录请尽快修改临时密码 →</button>}{notice && <p className="notice-bar success">{notice}</p>}{error && <p className="notice-bar error">{error}</p>}{view === "overview" && dashboard && <DashboardView dashboard={dashboard} startDate={startDate} scale={scale} onStartDate={setStartDate} onScale={setScale} onEdit={setDialog} onNew={() => setDialog("new")} onEventDates={updateEventDates} onOpenSettings={() => setView("settings")} />}{view === "connections" && <Connections />}{view === "settings" && <SettingsPage user={user} rooms={dashboard?.rooms || []} onUser={updateUser} onRoomsChanged={loadDashboard} onLogout={logout} />}</section>
+    <section className="workspace">{user.must_change_password && view !== "settings" && <button className="password-alert" onClick={() => setView("settings")}>首次登录请尽快修改临时密码 →</button>}{notice && <p className="notice-bar success">{notice}</p>}{error && <p className="notice-bar error">{error}</p>}{view === "overview" && dashboard && <DashboardView dashboard={dashboard} startDate={startDate} scale={scale} onStartDate={setStartDate} onScale={setScale} onEdit={setDialog} onNew={() => setDialog("new")} onEventDates={updateEventDates} onOpenSettings={() => setView("settings")} />}{view === "connections" && <Connections oauthResult={navigation.oauthResult} />}{view === "settings" && <SettingsPage user={user} rooms={dashboard?.rooms || []} onUser={updateUser} onRoomsChanged={loadDashboard} onLogout={logout} />}</section>
     <nav className="mobile-nav" aria-label="移动端主导航"><button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}><span>⌂</span>房态</button><button className={view === "connections" ? "active" : ""} onClick={() => setView("connections")}><span>↗</span>连接</button><button className="mobile-add" aria-label="新建事件" onClick={() => setDialog("new")}>＋</button><button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}><span>⚙</span>设置</button></nav>
     {dialog && <EventDialog rooms={dashboard?.rooms || []} event={dialog === "new" ? null : dialog} startDate={startDate} onClose={() => setDialog(null)} onSaved={loadDashboard} />}
   </main>;
