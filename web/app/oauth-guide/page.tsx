@@ -62,7 +62,7 @@ export default function OAuthGuidePage() {
         </div>
 
         <ol className={styles.steps}>
-          <li><strong>选择或创建项目</strong><p>打开 Google Cloud Console，在顶部项目选择器中创建或选择用于 Auto Calendar 的项目，然后启用 <Code>Google Calendar API</Code>。</p></li>
+          <li><strong>选择项目并启用 API</strong><p>打开 Google Cloud Console，在顶部项目选择器中创建或选择用于 Auto Calendar 的项目，然后在 <a href="https://console.cloud.google.com/apis/library/calendar-json.googleapis.com" target="_blank" rel="noreferrer">Google Calendar API 页面</a>点击 Enable。OAuth 客户端和 API 必须属于同一个项目。</p></li>
           <li><strong>完成 Google Auth Platform</strong><p>进入 <Code>Google Auth Platform</Code>，依次确认 Branding、Audience 和 Data Access。个人测试选择 External / Testing，并在 Audience → Test users 中加入实际用于授权的 Gmail，否则会出现 <Code>Error 403: access_denied</Code>。</p></li>
           <li><strong>创建 Web 客户端</strong><p>打开 Clients → Create client，Application type 选择 <Code>Web application</Code>，名称可填写 Auto Calendar。</p></li>
         </ol>
@@ -142,11 +142,28 @@ SESSION_COOKIE_SECURE=true`}</pre></article>
         <p className={styles.note}>修改域名后，Google 和 Microsoft 后台的 redirect URI 也必须换成同一个域名，并与 Auto Calendar 页面显示的 callback 逐字一致。</p>
       </section>
 
+      <section className={styles.providerSection} id="sync-calendar">
+        <div className={styles.sectionHead}>
+          <div className={`${styles.providerMark} ${styles.address}`}>↔</div>
+          <div><p className={styles.eyebrow}>同步范围</p><h2>用专用日历隔离酒店事件</h2></div>
+        </div>
+        <div className={styles.addressGrid}>
+          <article><span>推荐方式</span><h3>分别创建同名专用日历</h3><p>连接账号后，在 Auto Calendar 点击“创建专用日历”。系统会在 Google 或 Outlook 中创建并自动选中，例如 <Code>Auto Calendar · 酒店订房</Code>。你可以在两个官方日历中单独显示或隐藏它。</p></article>
+          <article><span>重要区别</span><h3>tag 不是同步通道</h3><p>相同的日历名或分类不会自动复制事件。服务端事件映射表负责识别同一条记录；Google 使用隐藏扩展属性，Outlook 还会显示你设定的分类名称。</p></article>
+        </div>
+        <div className={styles.faq}>
+          <details open><summary>为什么日历 ID 和 tag 不写进 .env？</summary><p><Code>.env</Code> 只保存部署级 OAuth Client ID / Secret。选择哪个日历、双向还是只读、使用什么分类，都是每个登录用户自己的设置，会安全地保存在数据库。</p></details>
+          <details><summary>四种同步模式如何选择？</summary><p><strong>双向</strong>用于三端连续同步；<strong>只读</strong>只把官方日历导入 Auto Calendar；<strong>只写</strong>只把酒店事件发布出去；<strong>暂停</strong>保留连接但停止同步。</p></details>
+          <details><summary>为什么 Google 创建专用日历提示权限不足？</summary><p>本版本新增了创建日历权限。旧 Google 授权令牌不含该 scope 时，请在连接页点击“重新授权”，同意新增权限后再创建。</p></details>
+        </div>
+      </section>
+
       <section className={styles.providerSection} id="troubleshooting">
         <div className={styles.sectionHead}><div><p className={styles.eyebrow}>排错清单</p><h2>刚才实际遇到的常见问题</h2></div></div>
         <div className={styles.faq}>
           <details><summary>按钮是灰色，提示 OAuth 未配置</summary><p>检查对应 Client ID 与 Client Secret 是否为空。Client ID 不能填写 callback URL。保存 <Code>.env</Code> 后必须重启当前运行方式。</p></details>
           <details><summary>Google 显示 Error 403: access_denied</summary><p>应用仍在 Testing，但当前 Gmail 没有加入 Audience → Test users。添加实际登录账号后重新授权。</p></details>
+          <details><summary>提示 Google Calendar API has not been used or is disabled</summary><p>OAuth 已连接不代表 Calendar API 已启用。打开 <a href="https://console.cloud.google.com/apis/library/calendar-json.googleapis.com" target="_blank" rel="noreferrer">Google Calendar API</a>，确认顶部选中创建 OAuth Client 的同一个项目，点击 Enable，等待几分钟后重试。</p></details>
           <details><summary>Microsoft 授权后直接返回，仍显示未连接</summary><p>如果日志出现 userAudience 与 /common 不匹配：Personal accounts only 使用 <Code>MICROSOFT_TENANT=consumers</Code>；组织目录 + 个人账号应用才使用 <Code>common</Code>。</p></details>
           <details><summary>Provider rejected the authorization code</summary><p>最常见原因是把 Secret ID 当作 Secret Value。重新创建 Client secret，复制 Value，替换 <Code>MICROSOFT_CLIENT_SECRET</Code>，重启后从 WebUI 发起一次全新的授权。</p></details>
           <details><summary>redirect_uri_mismatch</summary><p>供应商后台登记的 callback 与应用实际发送的地址不完全一致。检查协议、域名、端口、路径和末尾斜杠。</p></details>

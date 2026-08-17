@@ -531,6 +531,24 @@ external_version
 
 这样未来接入你的酒店系统、ERP或其他接口时，不会出现“Google改了、业务系统也改了，最后谁覆盖谁”的问题。
 
+## 4. Google / Microsoft 专用日历同步边界
+
+酒店 MVP 不把个人主日历整体纳入同步，而是在每个供应商中创建或选择一个专用日历，例如 `Auto Calendar · 酒店订房`：
+
+```text
+Auto Calendar 统一事件
+  ├─ EventMirror → Google 专用日历事件（private extendedProperties）
+  └─ EventMirror → Outlook 专用日历事件（可见 category）
+```
+
+同名 calendar、tag 或 category 只用于用户辨认、筛选和灾难恢复，不能作为事件同步的唯一键。真正映射必须使用本地 `event_id + provider_connection_id + external_event_id` 唯一关系，并保存外部版本与最近同步内容指纹，避免重复创建和回环。
+
+每个连接支持 `two_way`、`read_only`、`write_only`、`disabled` 四种模式。MVP 冲突策略为：本地存在待推送修改时本地优先；否则接受供应商最新版本，再转发到其他已启用写入的连接。更复杂的字段级合并与人工冲突中心进入 Next。
+
+一次全量同步必须分成两个阶段：先从所有启用读取的连接拉取，再向所有启用写入的连接推送。不能简单地逐个供应商“拉取后立刻回写”，否则排在最后的来源需要等下一轮才能传播到排在前面的目标。
+
+这些选择是用户运行时数据，保存在数据库中；`.env` 只保存部署级 OAuth 应用凭据，不能写用户的 calendar ID 或分类选择。
+
 ---
 
 # 六、Cloudflare Tunnel + Access方向是正确的
@@ -998,6 +1016,7 @@ Microsoft使用授权码流程并配合PKCE；需要后台持续同步时申请`
 ```text
 Google日历：
 calendar.calendarlist.readonly
+calendar.calendars
 calendar.events
 
 Microsoft日历：

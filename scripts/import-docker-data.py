@@ -29,6 +29,7 @@ TABLES = (
     "provider_connections",
     "oauth_states",
     "timeline_events",
+    "event_mirrors",
     "user_sessions",
     "audit_logs",
 )

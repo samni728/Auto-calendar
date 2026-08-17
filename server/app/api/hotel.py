@@ -8,6 +8,7 @@ from ..db import get_db
 from ..deps import current_membership, current_user
 from ..models import AuditLog, Room, TimelineEvent, User, WorkspaceMembership
 from ..schemas import DashboardResponse, EventCreate, EventResponse, EventUpdate
+from ..services.providers import push_event_to_workspace
 
 router = APIRouter(prefix="/api", tags=["hotel"])
 
@@ -92,7 +93,7 @@ def dashboard(
 
 
 @router.post("/events", response_model=EventResponse, status_code=status.HTTP_201_CREATED)
-def create_event(
+async def create_event(
     payload: EventCreate,
     user: User = Depends(current_user),
     membership: WorkspaceMembership = Depends(current_membership),
@@ -102,7 +103,11 @@ def create_event(
     _ensure_no_conflict(
         db, membership.workspace_id, payload.room_id, payload.start_date, payload.end_date
     )
-    event = TimelineEvent(workspace_id=membership.workspace_id, **payload.model_dump())
+    event = TimelineEvent(
+        workspace_id=membership.workspace_id,
+        sync_status="pending",
+        **payload.model_dump(),
+    )
     db.add(event)
     db.flush()
     db.add(
@@ -110,11 +115,19 @@ def create_event(
     )
     db.commit()
     db.refresh(event)
+    try:
+        await push_event_to_workspace(event, db)
+    except Exception:
+        db.rollback()
+        event = db.get(TimelineEvent, event.id)
+        if event:
+            event.sync_status = "sync_error"
+            db.commit()
     return event
 
 
 @router.patch("/events/{event_id}", response_model=EventResponse)
-def update_event(
+async def update_event(
     event_id: str,
     payload: EventUpdate,
     user: User = Depends(current_user),
@@ -140,18 +153,25 @@ def update_event(
     _ensure_no_conflict(db, membership.workspace_id, room_id, start_date, end_date, event.id)
     for key, value in values.items():
         setattr(event, key, value)
-    if event.source_system != "local":
-        event.sync_status = "local_override"
+    event.sync_status = "local_override" if event.source_system != "local" else "pending"
     db.add(
         AuditLog(user_id=user.id, action="update", object_type="timeline_event", object_id=event.id)
     )
     db.commit()
     db.refresh(event)
+    try:
+        await push_event_to_workspace(event, db)
+    except Exception:
+        db.rollback()
+        event = db.get(TimelineEvent, event.id)
+        if event:
+            event.sync_status = "sync_error"
+            db.commit()
     return event
 
 
 @router.delete("/events/{event_id}", status_code=204)
-def delete_event(
+async def delete_event(
     event_id: str,
     user: User = Depends(current_user),
     membership: WorkspaceMembership = Depends(current_membership),
@@ -168,7 +188,16 @@ def delete_event(
         raise HTTPException(status_code=404, detail="事件不存在")
     event.is_deleted = True
     event.status = "cancelled"
+    event.sync_status = "pending"
     db.add(
         AuditLog(user_id=user.id, action="delete", object_type="timeline_event", object_id=event.id)
     )
     db.commit()
+    try:
+        await push_event_to_workspace(event, db)
+    except Exception:
+        db.rollback()
+        event = db.get(TimelineEvent, event.id)
+        if event:
+            event.sync_status = "sync_error"
+            db.commit()

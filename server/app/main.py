@@ -15,7 +15,7 @@ from .config import get_settings
 from .db import SessionLocal, engine
 from .models import ProviderConnection
 from .seed import seed_database
-from .services.providers import sync_connection
+from .services.providers import sync_connections
 
 
 def initialize_database() -> None:
@@ -43,15 +43,7 @@ async def periodic_calendar_sync() -> None:
                     ProviderConnection.selected_calendar_id.is_not(None),
                 )
             ).all()
-            for connection in connections:
-                try:
-                    await sync_connection(connection, db)
-                except Exception as exc:
-                    db.rollback()
-                    current = db.get(ProviderConnection, connection.id)
-                    if current:
-                        current.last_error = f"Background sync failed: {type(exc).__name__}"
-                        db.commit()
+            await sync_connections(connections, db)
 
 
 @asynccontextmanager

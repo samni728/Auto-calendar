@@ -17,7 +17,7 @@ Auto Calendar is a Docker-first calendar middleware and responsive Web UI for sm
 
 - manage room reservations, cleaning, maintenance, and blocked dates;
 - connect Google Calendar and Microsoft 365 through browser-based OAuth;
-- import external calendar changes into a room-assignment workflow;
+- synchronize one dedicated hotel calendar across Auto Calendar, Google, and Microsoft;
 - access the same UI from desktop browsers, tablets, iPhone, and Android PWA;
 - keep application data on infrastructure you control.
 
@@ -32,7 +32,9 @@ The MVP uses its own account/password protection on every network. LAN and ZeroT
 - Password login with HttpOnly server sessions and Argon2 password hashing
 - Encrypted OAuth token storage using Fernet
 - Google Calendar and Microsoft 365 OAuth 2.0 + PKCE connection flow
-- External calendar selection, manual sync, and scheduled background sync
+- Dedicated-calendar creation/selection with two-way, read-only, write-only, and paused modes
+- Immediate local-to-provider writes plus manual and scheduled provider-to-provider synchronization
+- Per-provider event mapping and content fingerprints to prevent duplicate events and sync loops
 - Unassigned-event workflow before an imported event occupies a room
 - PostgreSQL persistence and Alembic migrations
 - PWA manifest and service worker
@@ -181,13 +183,19 @@ The connection buttons remain disabled when the corresponding Client ID or Clien
 
 Google test projects must add the actual authorizing Gmail address under **Google Auth Platform → Audience → Test users**. Otherwise Google returns `Error 403: access_denied`. Testing-mode authorizations that request Calendar access can expire after seven days; use testing mode for the MVP and complete the appropriate production/verification work before opening the integration to other users.
 
+OAuth setup alone is not enough: enable the **Google Calendar API** in the same Google Cloud project as the OAuth client. If the connection page reports `Calendar API has not been used or is disabled`, enable it in the API Library and retry after propagation.
+
 For localhost testing, the browser and Auto Calendar must run on the same computer. For VPS or remote-user access, configure a fixed public HTTPS domain through Cloudflare Tunnel or a reverse proxy, update `PUBLIC_BASE_URL`/`SOURCE_PUBLIC_BASE_URL`, restart the service, and register the newly generated callbacks at both providers. Keep FastAPI port `8000` private.
 
-OAuth consent happens in the user's browser. Client secrets and refresh tokens remain on the server; refresh tokens are encrypted before being stored in the application database. The server then refreshes access tokens and synchronizes the selected calendar on demand or at the configured interval.
+OAuth consent happens in the user's browser. Client secrets and refresh tokens remain on the server; refresh tokens are encrypted before being stored in the application database. The server then refreshes access tokens and synchronizes the selected dedicated calendar on demand or at the configured interval. Calendar IDs, sync modes, and labels are per-user runtime settings stored in the database—not deployment secrets in `.env`.
+
+For a clean separation from personal events, create the same clearly named dedicated calendar (for example `Auto Calendar · Hotel bookings`) in both providers from the Web UI. A matching name or tag does not itself synchronize anything: Auto Calendar's event-mirror records provide the actual identity mapping. Google receives a private extended property; Outlook also receives the visible category label.
+
+Each full sync uses two phases: first pull changes from every enabled provider, then push the merged workspace state to every writable provider. This lets Google, Outlook, and Auto Calendar converge in the same sync cycle instead of waiting for the next scheduled run.
 
 Requested permissions:
 
-- Google: identity/email, calendar-list read, calendar-event access
+- Google: identity/email, calendar-list read, calendar creation, and calendar-event access
 - Microsoft: `User.Read`, `Calendars.ReadWrite`, and `offline_access`
 
 ### Access options
@@ -277,7 +285,7 @@ Auto Calendar 是一个面向小型酒店和住宿团队的 Docker 自托管日�
 
 - 管理预订、入住、清洁、维护和锁房事件；
 - 通过浏览器 OAuth 连接 Google 与 Microsoft 日历；
-- 将外部日历变化先导入待分配流程，再绑定具体房间；
+- 将一份酒店专用日历在 Auto Calendar、Google 和 Microsoft 之间同步；
 - 通过桌面浏览器、Pad、iPhone 和 Android PWA 使用同一个界面；
 - 将业务数据保存在自己控制的服务器或 Mac mini 上。
 
@@ -292,7 +300,9 @@ Auto Calendar 是一个面向小型酒店和住宿团队的 Docker 自托管日�
 - HttpOnly 服务端 Session 与 Argon2 密码哈希
 - 使用 Fernet 加密保存 OAuth token
 - Google Calendar、Microsoft 365 OAuth 2.0 + PKCE 授权流程
-- 外部日历选择、手动同步和后台定时同步
+- 创建/选择专用日历，并支持双向、只读、只写和暂停四种模式
+- Auto Calendar 本地修改即时回写，以及手动/后台的跨供应商同步
+- 使用事件映射与内容指纹防止重复事件和同步回环
 - 外部事件待分配机制，避免导入后误占房间
 - PostgreSQL 持久化和 Alembic 数据库迁移
 - PWA manifest 与 Service Worker
@@ -441,13 +451,19 @@ Microsoft Tenant 选择规则：
 
 Google 测试应用必须在 **Google Auth Platform → Audience → Test users** 中加入实际用于授权的 Gmail，否则会出现 `Error 403: access_denied`。申请 Calendar 权限的 Testing 授权可能在 7 天后失效；个人 MVP 先用测试模式跑通，正式开放其他用户前再完成相应的 Production/验证工作。
 
+只创建 OAuth Client 还不够，必须在同一个 Google Cloud Project 中启用 **Google Calendar API**。如果连接页提示 `Calendar API has not been used or is disabled`，请到 API Library 启用后等待几分钟再重试。
+
 localhost 只适合浏览器与 Auto Calendar 位于同一台电脑的测试。部署到 VPS 或供异地用户访问时，需要通过 Cloudflare Tunnel 或反向代理准备固定公网 HTTPS 域名，更新 `PUBLIC_BASE_URL`/`SOURCE_PUBLIC_BASE_URL`，重启服务，然后把新 callback 逐字登记到两个供应商后台。FastAPI 的 `8000` 端口应继续留在内网。
 
-OAuth 登录和授权在用户浏览器中完成。Client Secret 与 refresh token 只保存在服务端，refresh token 加密后写入应用数据库。服务器随后可以刷新 access token，并按照配置周期或手动触发同步所选日历。
+OAuth 登录和授权在用户浏览器中完成。Client Secret 与 refresh token 只保存在服务端，refresh token 加密后写入应用数据库。服务器随后可以刷新 access token，并按照配置周期或手动触发同步所选专用日历。日历 ID、同步模式和分类名称属于每个用户的运行时设置，保存在数据库中，不应写进 `.env`。
+
+为避免干扰私人日程，建议在 WebUI 中分别为 Google 和 Microsoft 创建同名专用日历，例如 `Auto Calendar · 酒店订房`。同名日历或 tag 本身不会产生同步；真正的跨平台对应关系由 Auto Calendar 的事件映射表维护。Google 使用私有扩展属性标记，Outlook 事件还会显示所设置的分类名称。
+
+“同步全部日历”采用两阶段处理：先拉取所有已启用来源的变更，再把合并后的工作区事件推送到所有允许写入的目标，因此 Google、Outlook 与 Auto Calendar 可在同一轮同步中收敛，无须再等下一次定时任务。
 
 申请的主要权限：
 
-- Google：身份/邮箱、日历列表读取和日历事件访问
+- Google：身份/邮箱、日历列表读取、创建日历和日历事件访问
 - Microsoft：`User.Read`、`Calendars.ReadWrite`、`offline_access`
 
 ### 三种访问方式
@@ -516,7 +532,7 @@ curl http://localhost:8080/healthz
 
 - 一个酒店工作区和一条管理员主流程
 - 每个用户对每个服务商连接一个账号
-- 当前以“外部日历导入本地时间轴”为主，完整双向回写与冲突合并尚未实现
+- 当前双向同步采用 MVP 冲突规则：本地待同步修改优先，否则按供应商最新变更更新；复杂冲突中心属于后续版本
 - Cloudflare Tunnel/DNS API 自动创建流程尚未进入本版
 - iOS、Android、DMG 和 EXE 原生封装属于后续工作；当前客户端是响应式 Web/PWA
 - 本项目不是 PMS、订房引擎、支付系统或渠道管理器

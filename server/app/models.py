@@ -96,6 +96,8 @@ class ProviderConnection(Base):
     )
     selected_calendar_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     selected_calendar_name: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    sync_mode: Mapped[str] = mapped_column(String(32), default="two_way")
+    sync_label: Mapped[str] = mapped_column(String(120), default="Auto Calendar · 酒店订房")
     sync_cursor: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -141,6 +143,32 @@ class TimelineEvent(Base):
     external_event_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     external_version: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
+class EventMirror(Base):
+    __tablename__ = "event_mirrors"
+    __table_args__ = (
+        UniqueConstraint("event_id", "provider_connection_id", name="uq_event_mirror_connection"),
+        UniqueConstraint(
+            "provider_connection_id", "external_event_id", name="uq_mirror_external_event"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    event_id: Mapped[str] = mapped_column(
+        ForeignKey("timeline_events.id", ondelete="CASCADE"), index=True
+    )
+    provider_connection_id: Mapped[str] = mapped_column(
+        ForeignKey("provider_connections.id", ondelete="CASCADE"), index=True
+    )
+    external_event_id: Mapped[str] = mapped_column(Text)
+    external_version: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_synced_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(

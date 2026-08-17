@@ -144,6 +144,8 @@ class ConnectionResponse(BaseModel):
     account_email: str | None = None
     selected_calendar_id: str | None = None
     selected_calendar_name: str | None = None
+    sync_mode: str = "two_way"
+    sync_label: str = "Auto Calendar · 酒店订房"
     last_sync_at: datetime | None = None
     last_error: str | None = None
 
@@ -151,6 +153,17 @@ class ConnectionResponse(BaseModel):
 class CalendarSelectRequest(BaseModel):
     calendar_id: str
     calendar_name: str
+
+
+class CalendarCreateRequest(BaseModel):
+    calendar_name: str = Field(min_length=1, max_length=240)
+
+
+class ConnectionSettingsRequest(BaseModel):
+    calendar_id: str
+    calendar_name: str
+    sync_mode: str = Field(pattern="^(two_way|read_only|write_only|disabled)$")
+    sync_label: str = Field(min_length=1, max_length=120)
 
 
 class OAuthStartResponse(BaseModel):

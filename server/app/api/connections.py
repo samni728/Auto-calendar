@@ -10,8 +10,10 @@ from ..db import get_db
 from ..deps import current_membership, current_user
 from ..models import AuditLog, OAuthState, ProviderConnection, User, WorkspaceMembership
 from ..schemas import (
+    CalendarCreateRequest,
     CalendarSelectRequest,
     ConnectionResponse,
+    ConnectionSettingsRequest,
     OAuthStartResponse,
     ProviderCalendar,
 )
@@ -25,12 +27,15 @@ from ..security import (
 from ..services.providers import (
     account_email,
     authorization_url,
+    create_calendar,
     exchange_code,
     list_calendars,
     provider_configuration_issue,
     provider_configured,
     redirect_uri,
+    reset_calendar_mapping,
     sync_connection,
+    sync_connections,
 )
 from ..time_utils import as_utc
 
@@ -74,6 +79,8 @@ def _response(provider: str, connection: ProviderConnection | None) -> Connectio
         account_email=connection.account_email,
         selected_calendar_id=connection.selected_calendar_id,
         selected_calendar_name=connection.selected_calendar_name,
+        sync_mode=connection.sync_mode,
+        sync_label=connection.sync_label,
         last_sync_at=connection.last_sync_at,
         last_error=connection.last_error,
     )
@@ -195,12 +202,72 @@ def select_calendar(
 ):
     _validate_provider(provider)
     connection = _connection(db, user.id, provider)
+    if connection.selected_calendar_id != payload.calendar_id:
+        reset_calendar_mapping(db, connection)
     connection.selected_calendar_id = payload.calendar_id
     connection.selected_calendar_name = payload.calendar_name
     connection.sync_cursor = None
     db.add(
         AuditLog(
             user_id=user.id, action="select_calendar", object_type="calendar", object_id=provider
+        )
+    )
+    db.commit()
+    return _response(provider, connection)
+
+
+@router.post("/connections/{provider}/calendars", response_model=ProviderCalendar)
+async def add_calendar(
+    provider: str,
+    payload: CalendarCreateRequest,
+    user: User = Depends(current_user),
+    membership: WorkspaceMembership = Depends(current_membership),
+    db: Session = Depends(get_db),
+):
+    _validate_provider(provider)
+    connection = _connection(db, user.id, provider)
+    created = await create_calendar(
+        connection, db, payload.calendar_name.strip(), membership.workspace.timezone
+    )
+    reset_calendar_mapping(db, connection)
+    connection.selected_calendar_id = created["id"]
+    connection.selected_calendar_name = created["name"]
+    connection.sync_label = payload.calendar_name.strip()
+    db.add(
+        AuditLog(
+            user_id=user.id,
+            action="create_sync_calendar",
+            object_type="calendar",
+            object_id=provider,
+            detail=created["name"],
+        )
+    )
+    db.commit()
+    return created
+
+
+@router.put("/connections/{provider}/settings", response_model=ConnectionResponse)
+def update_connection_settings(
+    provider: str,
+    payload: ConnectionSettingsRequest,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    _validate_provider(provider)
+    connection = _connection(db, user.id, provider)
+    if connection.selected_calendar_id != payload.calendar_id:
+        reset_calendar_mapping(db, connection)
+    connection.selected_calendar_id = payload.calendar_id
+    connection.selected_calendar_name = payload.calendar_name
+    connection.sync_mode = payload.sync_mode
+    connection.sync_label = payload.sync_label.strip()
+    db.add(
+        AuditLog(
+            user_id=user.id,
+            action="update_sync_settings",
+            object_type="calendar",
+            object_id=provider,
+            detail=f"mode={payload.sync_mode}",
         )
     )
     db.commit()
@@ -222,6 +289,25 @@ async def sync(provider: str, user: User = Depends(current_user), db: Session = 
     )
     db.commit()
     return {"synced": count}
+
+
+@router.post("/connections/sync-all")
+async def sync_all(
+    user: User = Depends(current_user),
+    membership: WorkspaceMembership = Depends(current_membership),
+    db: Session = Depends(get_db),
+):
+    connections = db.scalars(
+        select(ProviderConnection).where(
+            ProviderConnection.user_id == user.id,
+            ProviderConnection.workspace_id == membership.workspace_id,
+            ProviderConnection.status == "connected",
+            ProviderConnection.selected_calendar_id.is_not(None),
+            ProviderConnection.sync_mode != "disabled",
+        )
+    ).all()
+    results, errors = await sync_connections(connections, db)
+    return {"synced": results, "errors": errors}
 
 
 @router.delete("/connections/{provider}", status_code=204)
