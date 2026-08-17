@@ -4,8 +4,8 @@ import Link from "next/link";
 import styles from "./oauth-guide.module.css";
 
 export const metadata: Metadata = {
-  title: "OAuth 图文配置教程 · Auto Calendar",
-  description: "Google Calendar 与 Microsoft Calendar 的 OAuth 注册、回调地址和环境变量配置教程。",
+  title: "日历连接与同步图文教程 · Auto Calendar",
+  description: "Google Calendar 与 Microsoft Calendar 的 OAuth 注册、自动创建专用日历、选择同步范围和环境变量配置教程。",
 };
 
 const localGoogleCallback = "http://localhost:8080/api/oauth/google/callback";
@@ -31,12 +31,13 @@ export default function OAuthGuidePage() {
       </nav>
       <div className={styles.heroCopy}>
         <p className={styles.eyebrow}>只在第一次部署时配置</p>
-        <h1>Google 与 Microsoft 日历<br />OAuth 图文配置教程</h1>
-        <p>先为 Auto Calendar 登记一张“应用身份证”，再让你本人在供应商网页授权自己的日历。这里集中说明入口、填写位置、回调地址、<Code>.env</Code> 参数和常见错误。</p>
+        <h1>连接 Google 与 Microsoft<br />并选择自动同步日历</h1>
+        <p>先为 Auto Calendar 登记一张“应用身份证”，再让你本人在供应商网页授权自己的日历。授权完成后，可以直接在本系统一键创建云端专用日历，或选择已有日历作为同步目标。</p>
         <div className={styles.heroActions}>
           <a href="#google">配置 Google</a>
           <a href="#microsoft">配置 Microsoft</a>
           <a href="#address">选择 localhost 或公网</a>
+          <a href="#sync-calendar">创建 / 选择同步日历</a>
         </div>
       </div>
     </header>
@@ -145,13 +146,32 @@ SESSION_COOKIE_SECURE=true`}</pre></article>
       <section className={styles.providerSection} id="sync-calendar">
         <div className={styles.sectionHead}>
           <div className={`${styles.providerMark} ${styles.address}`}>↔</div>
-          <div><p className={styles.eyebrow}>同步范围</p><h2>用专用日历隔离酒店事件</h2></div>
+          <div><p className={styles.eyebrow}>授权后的自动同步选择器</p><h2>一键创建或选择专用日历</h2></div>
         </div>
+        <article className={styles.namingNote}>
+          <strong>是的，“创建专用日历”会直接创建到你的云端账号</strong>
+          <p>点击 Google 卡片中的按钮，日历会建立在当前已授权的 Google Calendar 账号中；点击 Microsoft 卡片中的按钮，则会建立在当前已授权的 Outlook / Microsoft 365 账号中。创建成功后，Auto Calendar 会自动保存并选中它，无需再去官方日历手工建立。</p>
+        </article>
+
+        <Shot src="/tutorials/sync/automatic-calendar-selector.png" width={1891} height={831} alt="Auto Calendar 日历连接页，标出 Google 与 Microsoft 的创建专用日历按钮" caption="自动同步日历选择器：填写名称后点击“创建专用日历”，系统会直接在已授权账号中创建真实的云端日历，并自动把它设为当前同步目标。图中的账号信息已隐去。" />
+
+        <div className={styles.selectorFlow} aria-label="自动同步日历设置步骤">
+          <article><span>01</span><strong>连接账号</strong><p>先完成 Google 或 Microsoft OAuth，卡片右上角应显示“已连接”。</p></article>
+          <article><span>02</span><strong>建立同步边界</strong><p>推荐填写 <Code>Auto Calendar · 酒店订房</Code>，再点击“创建专用日历”。</p></article>
+          <article><span>03</span><strong>或选择已有日历</strong><p>如果已经有专用日历，点击“选择已有日历”并从供应商返回的列表中选择；不要误选个人主日历。</p></article>
+          <article><span>04</span><strong>选择同步方向</strong><p>保存双向、只读、只写或暂停，并按需要设置分类 / 标识。</p></article>
+          <article><span>05</span><strong>开始同步</strong><p>“立即同步”处理当前供应商；页面顶部“同步全部日历”会协调 Google、Auto Calendar 与 Microsoft。</p></article>
+        </div>
+
         <div className={styles.addressGrid}>
-          <article><span>推荐方式</span><h3>分别创建同名专用日历</h3><p>连接账号后，在 Auto Calendar 点击“创建专用日历”。系统会在 Google 或 Outlook 中创建并自动选中，例如 <Code>Auto Calendar · 酒店订房</Code>。你可以在两个官方日历中单独显示或隐藏它。</p></article>
-          <article><span>重要区别</span><h3>tag 不是同步通道</h3><p>相同的日历名或分类不会自动复制事件。服务端事件映射表负责识别同一条记录；Google 使用隐藏扩展属性，Outlook 还会显示你设定的分类名称。</p></article>
+          <article><span>创建专用日历（推荐）</span><h3>系统自动创建并选中</h3><p>适合第一次配置。它创建的是供应商账号里的真实日历，不是本地 tag。创建完成后“立即同步”会自动启用，你也能在 Google / Outlook 中单独显示、隐藏或改颜色。</p></article>
+          <article><span>选择已有日历</span><h3>复用你已经建立的日历</h3><p>适合已有“酒店订房”等业务日历的情况。选择后，只有该日历进入当前连接的同步范围；个人主日历和其他日历不会自动混进来。</p></article>
+          <article><span>同步方向</span><h3>决定数据可以往哪里流动</h3><p><strong>双向</strong>：官方日历 ↔ Auto Calendar；<strong>只读</strong>：官方日历 → Auto Calendar；<strong>只写</strong>：Auto Calendar → 官方日历；<strong>暂停</strong>：保留授权但不读写。</p></article>
+          <article><span>分类 / 标识</span><h3>用于辨认，不是匹配通道</h3><p>Outlook 会显示分类名称，Google 使用隐藏扩展属性标记事件。真正避免重复、识别同一事件的是服务器端映射记录，不是两个平台恰好使用相同名称。</p></article>
         </div>
         <div className={styles.faq}>
+          <details open><summary>为什么“立即同步”还是灰色？</summary><p>尚未创建或选择同步目标时按钮会禁用。先点“创建专用日历”，或用“选择已有日历”选定一个日历；成功保存后按钮即可使用。</p></details>
+          <details><summary>需要先到 Google 或 Outlook 手工创建吗？</summary><p>不需要。最简单的路径就是直接使用 Auto Calendar 的“创建专用日历”。只有你想复用一个已经存在的日历时，才需要点击“选择已有日历”。</p></details>
           <details open><summary>为什么日历 ID 和 tag 不写进 .env？</summary><p><Code>.env</Code> 只保存部署级 OAuth Client ID / Secret。选择哪个日历、双向还是只读、使用什么分类，都是每个登录用户自己的设置，会安全地保存在数据库。</p></details>
           <details><summary>四种同步模式如何选择？</summary><p><strong>双向</strong>用于三端连续同步；<strong>只读</strong>只把官方日历导入 Auto Calendar；<strong>只写</strong>只把酒店事件发布出去；<strong>暂停</strong>保留连接但停止同步。</p></details>
           <details><summary>为什么 Google 创建专用日历提示权限不足？</summary><p>本版本新增了创建日历权限。旧 Google 授权令牌不含该 scope 时，请在连接页点击“重新授权”，同意新增权限后再创建。</p></details>
