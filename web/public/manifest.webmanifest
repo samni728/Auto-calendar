@@ -1,0 +1,13 @@
+{
+  "name": "Auto Calendar 酒店房态中心",
+  "short_name": "Auto Calendar",
+  "description": "连接外部日历的酒店房态管理工具",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f3f5f6",
+  "theme_color": "#182738",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
