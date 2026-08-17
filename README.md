@@ -25,7 +25,9 @@ The MVP uses its own account/password protection on every network. LAN and ZeroT
 
 ### MVP capabilities
 
-- Responsive seven-day room timeline
+- Required first-login setup for the administrator identity, hotel name, timezone, and initial rooms; no fictional hotel or reservation data is preloaded
+- Account, display identity, password, hotel, timezone, and room management from the Web UI
+- Responsive room timeline with day/week scales, pointer-based event movement, and left/right duration resizing on desktop, tablet, and mobile
 - Local event create, update, soft-delete, and overlap protection
 - Password login with HttpOnly server sessions and Argon2 password hashing
 - Encrypted OAuth token storage using Fernet
@@ -35,6 +37,7 @@ The MVP uses its own account/password protection on every network. LAN and ZeroT
 - PostgreSQL persistence and Alembic migrations
 - PWA manifest and service worker
 - Docker Compose deployment with an Nginx gateway
+- Direct source-code mode with an interactive Bash menu and a separate local SQLite development database
 - Optional Cloudflare Tunnel container profile
 - LAN and host-managed ZeroTier access
 - Basic audit records for sensitive operations
@@ -79,7 +82,16 @@ Open [http://localhost:8080](http://localhost:8080).
 
 - Default administrator email: `admin@autocalendar.app`
 - A random initial password is generated in the local `.env` file.
-- Change the temporary password immediately after the first login.
+- The first login opens a required setup flow for the administrator name, display title, hotel, timezone, and rooms.
+- Change the temporary password from **Account & Hotel Settings** immediately after setup.
+
+After the first setup, open the interactive Docker management menu whenever you need to start, stop, restart, inspect status, or follow logs:
+
+```bash
+./scripts/manage.sh
+```
+
+The same script also supports direct commands such as `./scripts/manage.sh start`, `stop`, `restart`, `status`, and `logs api`.
 
 Useful commands:
 
@@ -91,6 +103,27 @@ docker compose down
 ```
 
 `docker compose down` preserves the PostgreSQL volume. `docker compose down -v` permanently removes local database data and should only be used when intentionally resetting a test installation.
+
+### Run directly from source (without Docker)
+
+The source management menu runs FastAPI and Next.js directly. It requires Python 3.12+, Node.js 22+, and npm. By default it uses a separate local SQLite database under `.runtime/source`, so PostgreSQL is not required for development.
+
+```bash
+./scripts/manage-source.sh
+```
+
+The menu supports installing dependencies, starting, stopping, restarting, checking status, running migrations, and following API/WebUI logs. Direct commands are also available:
+
+```bash
+./scripts/manage-source.sh install
+./scripts/manage-source.sh start
+./scripts/manage-source.sh status
+./scripts/manage-source.sh logs api
+./scripts/manage-source.sh restart
+./scripts/manage-source.sh stop
+```
+
+Open [http://localhost:8080](http://localhost:8080). Source mode and Docker mode cannot use port `8080` at the same time; stop one before starting the other. To use a locally installed PostgreSQL instead of SQLite, set `SOURCE_DATABASE_URL` in `.env`.
 
 ### OAuth configuration
 
@@ -113,7 +146,14 @@ Register these exact redirect URIs:
 - Google: `https://calendar.example.com/api/oauth/google/callback`
 - Microsoft: `https://calendar.example.com/api/oauth/microsoft/callback`
 
-OAuth consent happens in the user's browser. Client secrets and refresh tokens remain on the server; refresh tokens are encrypted before being stored in PostgreSQL. The server then refreshes access tokens and synchronizes the selected calendar on demand or at the configured interval.
+For local browser testing, keep `PUBLIC_BASE_URL=http://localhost:8080` and register these additional Web redirect URIs in the same test applications:
+
+- Google: `http://localhost:8080/api/oauth/google/callback`
+- Microsoft: `http://localhost:8080/api/oauth/microsoft/callback`
+
+The connection buttons remain disabled when the corresponding Client ID or Client Secret is empty. After changing `.env`, recreate the API container with `./scripts/manage.sh build`, or restart source mode with `./scripts/manage-source.sh restart`.
+
+OAuth consent happens in the user's browser. Client secrets and refresh tokens remain on the server; refresh tokens are encrypted before being stored in the application database. The server then refreshes access tokens and synchronizes the selected calendar on demand or at the configured interval.
 
 Requested permissions:
 
@@ -215,7 +255,9 @@ Auto Calendar 是一个面向小型酒店和住宿团队的 Docker 自托管日�
 
 ### MVP 已有能力
 
-- 响应式七日房态时间轴
+- 管理员首次登录必须设置真实姓名、展示身份、酒店名称、时区和初始房间，不再预置虚构酒店、房间或订单
+- 在 WebUI 中管理账号身份、密码、酒店、时区和房间
+- 响应式房态时间轴，支持日/周单位，以及桌面、Pad、手机上的事件拖动和左右边缘时长调整
 - 本地事件新增、修改、软删除和日期冲突保护
 - HttpOnly 服务端 Session 与 Argon2 密码哈希
 - 使用 Fernet 加密保存 OAuth token
@@ -225,6 +267,7 @@ Auto Calendar 是一个面向小型酒店和住宿团队的 Docker 自托管日�
 - PostgreSQL 持久化和 Alembic 数据库迁移
 - PWA manifest 与 Service Worker
 - Docker Compose 和 Nginx 统一入口
+- 带交互式 Bash 菜单的纯源码运行模式，以及独立的本地 SQLite 开发数据库
 - 可选的 Cloudflare Tunnel 容器 profile
 - 局域网与宿主机 ZeroTier 访问
 - 敏感操作的基础审计记录
@@ -269,7 +312,16 @@ chmod +x scripts/bootstrap.sh
 
 - 默认管理员邮箱：`admin@autocalendar.app`
 - 启动脚本会在本地 `.env` 中生成随机初始密码。
-- 第一次登录后请立即修改临时密码。
+- 第一次登录会强制填写管理员姓名、展示身份、酒店、时区和房间。
+- 初始化完成后，请立即在“账号与酒店设置”中修改临时密码。
+
+首次初始化完成后，可以随时打开 Docker 中文管理菜单，用于启动、停止、重启、查看状态和实时日志：
+
+```bash
+./scripts/manage.sh
+```
+
+同一个脚本也支持直接命令，例如 `./scripts/manage.sh start`、`stop`、`restart`、`status` 和 `logs api`。
 
 常用命令：
 
@@ -281,6 +333,27 @@ docker compose down
 ```
 
 `docker compose down` 不会删除 PostgreSQL 数据卷。`docker compose down -v` 会永久删除本地数据库数据，只应在明确重置测试环境时使用。
+
+### 不使用 Docker，直接运行源码
+
+源码管理菜单会直接运行 FastAPI 与 Next.js，需要 Python 3.12+、Node.js 22+ 和 npm。源码开发模式默认使用 `.runtime/source` 下的独立 SQLite 数据库，因此不要求本机另外安装 PostgreSQL。
+
+```bash
+./scripts/manage-source.sh
+```
+
+菜单支持安装依赖、启动、停止、重启、查看状态、数据库迁移，以及查看 API/WebUI 实时日志。也可以直接使用命令：
+
+```bash
+./scripts/manage-source.sh install
+./scripts/manage-source.sh start
+./scripts/manage-source.sh status
+./scripts/manage-source.sh logs api
+./scripts/manage-source.sh restart
+./scripts/manage-source.sh stop
+```
+
+启动后访问 [http://localhost:8080](http://localhost:8080)。源码模式与 Docker 模式不能同时占用 `8080` 端口，启动其中一种之前需要先停止另一种。如需使用本机 PostgreSQL，可在 `.env` 中设置 `SOURCE_DATABASE_URL`。
 
 ### OAuth 配置
 
@@ -303,7 +376,14 @@ MICROSOFT_TENANT=common
 - Google：`https://calendar.example.com/api/oauth/google/callback`
 - Microsoft：`https://calendar.example.com/api/oauth/microsoft/callback`
 
-OAuth 登录和授权在用户浏览器中完成。Client Secret 与 refresh token 只保存在服务端，refresh token 加密后写入 PostgreSQL。服务器随后可以刷新 access token，并按照配置周期或手动触发同步所选日历。
+如需在本地浏览器测试，请保留`PUBLIC_BASE_URL=http://localhost:8080`，并在同一套测试应用中增加以下 Web Redirect URI：
+
+- Google：`http://localhost:8080/api/oauth/google/callback`
+- Microsoft：`http://localhost:8080/api/oauth/microsoft/callback`
+
+只要对应的 Client ID 或 Client Secret 为空，连接按钮就会保持禁用。修改 `.env` 后，Docker 模式运行 `./scripts/manage.sh build` 重建 API 容器；源码模式运行 `./scripts/manage-source.sh restart`。
+
+OAuth 登录和授权在用户浏览器中完成。Client Secret 与 refresh token 只保存在服务端，refresh token 加密后写入应用数据库。服务器随后可以刷新 access token，并按照配置周期或手动触发同步所选日历。
 
 申请的主要权限：
 

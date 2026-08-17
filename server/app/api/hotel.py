@@ -50,7 +50,7 @@ def _ensure_no_conflict(
 @router.get("/dashboard", response_model=DashboardResponse)
 def dashboard(
     start: date = Query(default_factory=date.today),
-    days: int = Query(default=14, ge=7, le=31),
+    days: int = Query(default=14, ge=7, le=93),
     membership: WorkspaceMembership = Depends(current_membership),
     db: Session = Depends(get_db),
 ):

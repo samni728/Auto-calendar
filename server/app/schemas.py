@@ -17,10 +17,50 @@ class UserResponse(BaseModel):
     id: str
     email: str
     display_name: str
+    job_title: str
     role: str
     workspace_id: str
     workspace_name: str
+    timezone: str
     must_change_password: bool
+    onboarding_completed: bool
+
+
+class ProfileUpdate(BaseModel):
+    display_name: str = Field(min_length=1, max_length=120)
+    job_title: str = Field(min_length=1, max_length=80)
+
+
+class WorkspaceUpdate(BaseModel):
+    workspace_name: str = Field(min_length=1, max_length=160)
+    timezone: str = Field(min_length=1, max_length=80)
+
+
+class RoomSetup(BaseModel):
+    code: str = Field(min_length=1, max_length=32)
+    room_type: str = Field(default="标准房", min_length=1, max_length=80)
+    floor: str = Field(default="", max_length=32)
+
+
+class OnboardingRequest(ProfileUpdate, WorkspaceUpdate):
+    rooms: list[RoomSetup] = Field(min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def unique_room_codes(self):
+        normalized = [room.code.strip().lower() for room in self.rooms]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("room codes must be unique")
+        return self
+
+
+class RoomCreate(RoomSetup):
+    pass
+
+
+class RoomUpdate(BaseModel):
+    code: str | None = Field(default=None, min_length=1, max_length=32)
+    room_type: str | None = Field(default=None, min_length=1, max_length=80)
+    floor: str | None = Field(default=None, max_length=32)
 
 
 class RoomResponse(BaseModel):

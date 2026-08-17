@@ -14,20 +14,9 @@ from ..security import (
     token_hash,
     verify_password,
 )
+from ..services.accounts import user_response
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-
-
-def _user_response(user: User, membership: WorkspaceMembership) -> UserResponse:
-    return UserResponse(
-        id=user.id,
-        email=user.email,
-        display_name=user.display_name,
-        role=membership.role,
-        workspace_id=membership.workspace_id,
-        workspace_name=membership.workspace.name,
-        must_change_password=user.must_change_password,
-    )
 
 
 @router.post("/login", response_model=UserResponse)
@@ -60,7 +49,7 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
         max_age=settings.session_days * 86400,
         path="/",
     )
-    return _user_response(user, membership)
+    return user_response(user, membership)
 
 
 @router.get("/me", response_model=UserResponse)
@@ -68,7 +57,7 @@ def me(
     user: User = Depends(current_user),
     membership: WorkspaceMembership = Depends(current_membership),
 ):
-    return _user_response(user, membership)
+    return user_response(user, membership)
 
 
 @router.post("/logout", status_code=204)
@@ -107,4 +96,4 @@ def change_password(
         AuditLog(user_id=user.id, action="change_password", object_type="user", object_id=user.id)
     )
     db.commit()
-    return _user_response(user, membership)
+    return user_response(user, membership)

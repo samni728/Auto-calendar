@@ -10,6 +10,7 @@ from sqlalchemy.exc import OperationalError
 from .api.auth import router as auth_router
 from .api.connections import router as connections_router
 from .api.hotel import router as hotel_router
+from .api.settings import router as settings_router
 from .config import get_settings
 from .db import SessionLocal, engine
 from .models import ProviderConnection
@@ -77,6 +78,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(hotel_router)
 app.include_router(connections_router)
+app.include_router(settings_router)
 
 
 @app.get("/healthz", tags=["operations"])
