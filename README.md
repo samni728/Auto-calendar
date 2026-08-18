@@ -127,7 +127,7 @@ The menu supports installing dependencies, starting, stopping, restarting, check
 
 Open [http://localhost:8080](http://localhost:8080). Source mode and Docker mode cannot use port `8080` at the same time; stop one before starting the other. To use a locally installed PostgreSQL instead of SQLite, set `SOURCE_DATABASE_URL` in `.env`.
 
-To allow trusted LAN or ZeroTier devices to open the WebUI, set `SOURCE_WEB_HOST=0.0.0.0` in `.env` and restart source mode. The status command will print the detected LAN URL. FastAPI remains bound to `127.0.0.1`; only the WebUI is exposed. When the OAuth callback still uses `localhost`, complete provider authorization on the server computer, then use the LAN URL normally from phones, tablets, and other computers.
+Source mode allows trusted LAN or ZeroTier devices to open the WebUI by default (`SOURCE_WEB_HOST=0.0.0.0`). The status command prints the detected LAN URL. Set `SOURCE_WEB_HOST=127.0.0.1` only when host-only access is required. FastAPI remains bound to `127.0.0.1`; only the WebUI is exposed. When the OAuth callback still uses `localhost`, complete provider authorization on the server computer, then use the LAN URL normally from phones, tablets, and other computers.
 
 Alembic “migration complete” only means that the database schema is current; it does not copy business data between PostgreSQL and SQLite. To make source mode use a one-time copy of the current Docker data, choose **Import data from Docker PostgreSQL** in the menu or run:
 
@@ -397,7 +397,7 @@ docker compose down
 
 启动后访问 [http://localhost:8080](http://localhost:8080)。源码模式与 Docker 模式不能同时占用 `8080` 端口，启动其中一种之前需要先停止另一种。如需使用本机 PostgreSQL，可在 `.env` 中设置 `SOURCE_DATABASE_URL`。
 
-若要让可信局域网或 ZeroTier 设备访问 WebUI，在 `.env` 设置 `SOURCE_WEB_HOST=0.0.0.0` 后重启源码服务，状态页面会显示自动检测到的局域网地址。FastAPI 仍只监听 `127.0.0.1`，对外仅开放 WebUI。OAuth callback 仍使用 localhost 时，请在运行服务的电脑上完成 Google/Microsoft 授权；授权后手机、Pad 和其他电脑可以正常通过局域网地址使用。
+源码模式默认设置 `SOURCE_WEB_HOST=0.0.0.0`，允许可信局域网或 ZeroTier 设备访问 WebUI，状态页面会显示自动检测到的局域网地址；只有需要限制为本机访问时才改成 `127.0.0.1`。FastAPI 仍只监听 `127.0.0.1`，对外仅开放 WebUI。OAuth callback 仍使用 localhost 时，请在运行服务的电脑上完成 Google/Microsoft 授权；授权后手机、Pad 和其他电脑可以正常通过局域网地址使用。
 
 菜单中的“Alembic 迁移完成”只表示数据库表结构已升级，并不会自动把 PostgreSQL 业务数据复制到 SQLite。若要让源码模式一次性继承当前 Docker 数据，请在菜单选择“从 Docker PostgreSQL 导入数据”，或者运行：
 

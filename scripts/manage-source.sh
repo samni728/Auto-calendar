@@ -3,6 +3,8 @@
 set -uo pipefail
 
 PROJECT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_PATH="$PROJECT_DIR/scripts/manage-source.sh"
+SCRIPT_SIGNATURE="$(cksum "$SCRIPT_PATH" | awk '{print $1 ":" $2}')"
 SERVER_DIR="$PROJECT_DIR/server"
 WEB_DIR="$PROJECT_DIR/web"
 ENV_FILE="$PROJECT_DIR/.env"
@@ -27,6 +29,15 @@ info() { printf "%b\n" "${BLUE}ℹ ${RESET}$*"; }
 success() { printf "%b\n" "${GREEN}✓ ${RESET}$*"; }
 warn() { printf "%b\n" "${YELLOW}⚠ ${RESET}$*"; }
 error() { printf "%b\n" "${RED}✗ ${RESET}$*" >&2; }
+
+reload_if_updated() {
+  local current_signature
+  current_signature="$(cksum "$SCRIPT_PATH" | awk '{print $1 ":" $2}')"
+  if [[ "$current_signature" != "$SCRIPT_SIGNATURE" ]]; then
+    success "检测到管理脚本已经更新，正在载入最新版菜单…"
+    exec bash "$SCRIPT_PATH"
+  fi
+}
 
 print_header() {
   printf "\n%b\n" "${BOLD}Auto Calendar · 源码运行管理菜单${RESET}"
@@ -100,7 +111,7 @@ load_environment() {
   set +a
   SOURCE_API_PORT="${SOURCE_API_PORT:-8000}"
   SOURCE_WEB_PORT="${SOURCE_WEB_PORT:-${APP_PORT:-8080}}"
-  SOURCE_WEB_HOST="${SOURCE_WEB_HOST:-127.0.0.1}"
+  SOURCE_WEB_HOST="${SOURCE_WEB_HOST:-0.0.0.0}"
   if [[ -n "${SOURCE_DATABASE_URL:-}" ]]; then
     DATABASE_URL="$SOURCE_DATABASE_URL"
     SOURCE_DATABASE_LABEL="自定义数据库（连接信息已隐藏）"
@@ -274,6 +285,7 @@ start_services() {
   (
     cd "$WEB_DIR"
     export API_PROXY_TARGET="http://127.0.0.1:$SOURCE_API_PORT"
+    export NEXT_ALLOWED_DEV_ORIGINS="${SOURCE_ALLOWED_DEV_ORIGINS:-localhost,127.0.0.1,$(lan_address)}"
     nohup "$WEB_DIR/node_modules/.bin/next" dev --webpack --hostname "$SOURCE_WEB_HOST" --port "$SOURCE_WEB_PORT" >> "$WEB_LOG" 2>&1 < /dev/null &
     printf "%s\n" "$!" > "$WEB_PID_FILE"
   )
@@ -390,7 +402,8 @@ print_help() {
 
 源码模式默认使用 .runtime/source/autocalendar.db（SQLite）。
 如需本地 PostgreSQL，请在 .env 设置 SOURCE_DATABASE_URL。
-如需局域网访问 WebUI，请设置 SOURCE_WEB_HOST=0.0.0.0；FastAPI 仍只监听本机。
+源码菜单默认允许可信局域网访问 WebUI；FastAPI 仍只监听本机。
+如需限制为仅本机访问，请设置 SOURCE_WEB_HOST=127.0.0.1。
 EOF
 }
 
@@ -412,6 +425,7 @@ interactive_menu() {
     printf "  7) 执行数据库结构迁移\n  8) 从 Docker PostgreSQL 导入数据\n  0) 退出\n\n"
     local choice
     read -r -p "请输入编号：" choice || { printf "\n"; return 0; }
+    reload_if_updated
     printf "\n"
     case "$choice" in
       1) start_services; pause_menu ;; 2) install_dependencies; pause_menu ;;
