@@ -140,6 +140,7 @@ SESSION_COOKIE_SECURE=false`}</pre></article>
 SOURCE_PUBLIC_BASE_URL=https://calendar.example.com
 SESSION_COOKIE_SECURE=true`}</pre></article>
         </div>
+        <article className={styles.namingNote}><strong>局域网访问与 OAuth callback 是两件事</strong><p>源码模式设置 <Code>SOURCE_WEB_HOST=0.0.0.0</Code> 后，Pad、手机和其他电脑可通过服务器局域网 IP 打开 WebUI；FastAPI 仍只在本机监听。若 <Code>SOURCE_PUBLIC_BASE_URL</Code> 仍为 localhost，请只在服务器这台电脑完成 Google/Microsoft 授权。其他局域网设备日常登录和使用不受影响。</p></article>
         <p className={styles.note}>修改域名后，Google 和 Microsoft 后台的 redirect URI 也必须换成同一个域名，并与 Auto Calendar 页面显示的 callback 逐字一致。</p>
       </section>
 
@@ -183,7 +184,7 @@ SESSION_COOKIE_SECURE=true`}</pre></article>
         <div className={styles.faq}>
           <details><summary>按钮是灰色，提示 OAuth 未配置</summary><p>检查对应 Client ID 与 Client Secret 是否为空。Client ID 不能填写 callback URL。保存 <Code>.env</Code> 后必须重启当前运行方式。</p></details>
           <details><summary>Google 显示 Error 403: access_denied</summary><p>应用仍在 Testing，但当前 Gmail 没有加入 Audience → Test users。添加实际登录账号后重新授权。</p></details>
-          <details><summary>提示 Google Calendar API has not been used or is disabled</summary><p>OAuth 已连接不代表 Calendar API 已启用。打开 <a href="https://console.cloud.google.com/apis/library/calendar-json.googleapis.com" target="_blank" rel="noreferrer">Google Calendar API</a>，确认顶部选中创建 OAuth Client 的同一个项目，点击 Enable，等待几分钟后重试。</p></details>
+          <details><summary>提示 Google Calendar API has not been used or is disabled</summary><p>OAuth 已连接不代表 Calendar API 已启用。连接页会显示“打开并启用 Google Calendar API”按钮；进入后确认顶部选中创建 OAuth Client 的同一个项目，点击 Enable，等待几分钟后重试。</p></details>
           <details><summary>Microsoft 授权后直接返回，仍显示未连接</summary><p>如果日志出现 userAudience 与 /common 不匹配：Personal accounts only 使用 <Code>MICROSOFT_TENANT=consumers</Code>；组织目录 + 个人账号应用才使用 <Code>common</Code>。</p></details>
           <details><summary>Provider rejected the authorization code</summary><p>最常见原因是把 Secret ID 当作 Secret Value。重新创建 Client secret，复制 Value，替换 <Code>MICROSOFT_CLIENT_SECRET</Code>，重启后从 WebUI 发起一次全新的授权。</p></details>
           <details><summary>redirect_uri_mismatch</summary><p>供应商后台登记的 callback 与应用实际发送的地址不完全一致。检查协议、域名、端口、路径和末尾斜杠。</p></details>

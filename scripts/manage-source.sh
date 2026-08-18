@@ -100,6 +100,7 @@ load_environment() {
   set +a
   SOURCE_API_PORT="${SOURCE_API_PORT:-8000}"
   SOURCE_WEB_PORT="${SOURCE_WEB_PORT:-${APP_PORT:-8080}}"
+  SOURCE_WEB_HOST="${SOURCE_WEB_HOST:-127.0.0.1}"
   if [[ -n "${SOURCE_DATABASE_URL:-}" ]]; then
     DATABASE_URL="$SOURCE_DATABASE_URL"
     SOURCE_DATABASE_LABEL="自定义数据库（连接信息已隐藏）"
@@ -117,7 +118,17 @@ load_environment() {
     SESSION_COOKIE_SECURE=false
   fi
   export DATABASE_URL PUBLIC_BASE_URL CORS_ORIGINS SESSION_COOKIE_SECURE
-  export SOURCE_API_PORT SOURCE_WEB_PORT SOURCE_DATABASE_LABEL
+  export SOURCE_API_PORT SOURCE_WEB_PORT SOURCE_WEB_HOST SOURCE_DATABASE_LABEL
+}
+
+lan_address() {
+  local address=""
+  if command -v ipconfig >/dev/null 2>&1; then
+    address="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)"
+  elif command -v hostname >/dev/null 2>&1; then
+    address="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  fi
+  [[ -n "$address" ]] && printf "%s" "$address"
 }
 
 install_dependencies() {
@@ -263,7 +274,7 @@ start_services() {
   (
     cd "$WEB_DIR"
     export API_PROXY_TARGET="http://127.0.0.1:$SOURCE_API_PORT"
-    nohup "$WEB_DIR/node_modules/.bin/next" dev --webpack --hostname 127.0.0.1 --port "$SOURCE_WEB_PORT" >> "$WEB_LOG" 2>&1 < /dev/null &
+    nohup "$WEB_DIR/node_modules/.bin/next" dev --webpack --hostname "$SOURCE_WEB_HOST" --port "$SOURCE_WEB_PORT" >> "$WEB_LOG" 2>&1 < /dev/null &
     printf "%s\n" "$!" > "$WEB_PID_FILE"
   )
   if ! wait_for_url "http://127.0.0.1:$SOURCE_WEB_PORT"; then
@@ -273,6 +284,11 @@ start_services() {
     return 1
   fi
   success "源码服务已启动：http://localhost:$SOURCE_WEB_PORT"
+  if [[ "$SOURCE_WEB_HOST" == "0.0.0.0" ]]; then
+    local network_ip
+    network_ip="$(lan_address)"
+    [[ -n "$network_ip" ]] && success "局域网访问地址：http://$network_ip:$SOURCE_WEB_PORT"
+  fi
   show_status
 }
 
@@ -319,11 +335,18 @@ status_line() {
 }
 
 show_status() {
+  local network_ip
   load_environment || return 1
   printf "\n"
   status_line "FastAPI" "$API_PID_FILE"
   status_line "WebUI" "$WEB_PID_FILE"
   printf "\n  访问地址   http://localhost:%s\n" "$SOURCE_WEB_PORT"
+  if [[ "$SOURCE_WEB_HOST" == "0.0.0.0" ]]; then
+    network_ip="$(lan_address)"
+    [[ -n "$network_ip" ]] && printf "  局域网地址 http://%s:%s\n" "$network_ip" "$SOURCE_WEB_PORT"
+  else
+    printf "  网络监听   仅本机（SOURCE_WEB_HOST=%s）\n" "$SOURCE_WEB_HOST"
+  fi
   printf "  API 地址   http://127.0.0.1:%s\n" "$SOURCE_API_PORT"
   printf "  数据库     %s\n" "$SOURCE_DATABASE_LABEL"
   printf "  日志目录   %s\n" "$LOG_DIR"
@@ -367,6 +390,7 @@ print_help() {
 
 源码模式默认使用 .runtime/source/autocalendar.db（SQLite）。
 如需本地 PostgreSQL，请在 .env 设置 SOURCE_DATABASE_URL。
+如需局域网访问 WebUI，请设置 SOURCE_WEB_HOST=0.0.0.0；FastAPI 仍只监听本机。
 EOF
 }
 

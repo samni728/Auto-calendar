@@ -60,6 +60,7 @@ label { display: grid; gap: 7px; color: #52616e; font-size: 12px; font-weight: 7
 .primary-button:disabled { cursor: not-allowed; opacity: .45; box-shadow: none; }
 .password-alert { width: 100%; margin: -8px 0 18px; padding: 10px 14px; border: 1px solid #f2d29e; border-radius: 10px; color: #7e571d; background: #fff8e9; font-size: 12px; font-weight: 700; }
 .notice-bar { margin: 0 0 16px; padding: 11px 14px; border: 1px solid #d8e3f9; border-radius: 10px; color: #365c9e; background: #edf3ff; font-size: 12px; }
+.action-notice { display: flex; align-items: center; justify-content: space-between; gap: 14px; line-height: 1.6; }.action-notice a { flex: 0 0 auto; padding: 8px 10px; border-radius: 8px; color: white; background: #315fae; font-size: 10px; font-weight: 800; }
 .unassigned-banner { margin: 16px 0 -2px; padding: 12px 16px; border: 1px solid #f3dfb8; border-radius: 12px; background: #fffaf0; }
 .unassigned-banner strong, .unassigned-banner small { display: block; }.unassigned-banner strong { color: #805719; font-size: 12px; }.unassigned-banner small { margin-top: 3px; color: #8c806d; font-size: 10px; }
 
@@ -92,6 +93,7 @@ label { display: grid; gap: 7px; color: #52616e; font-size: 12px; font-weight: 7
 }
 
 @media (max-width: 700px) {
+  .action-notice { align-items: stretch; flex-direction: column; }.action-notice a { text-align: center; }
   .app-shell { display: block; }.sidebar { display: none; }.workspace { padding: 20px 15px 94px; }.topbar { align-items: flex-start; }.eyebrow { font-size: 10px; } h1 { font-size: 21px; }
   .icon-button { display: none; }.primary-button { width: 42px; padding: 0; font-size: 0; }.primary-button span { font-size: 22px; }.metrics { margin-top: 19px; grid-template-columns: repeat(2,1fr); gap: 9px; }.metric-card { min-height: 106px; padding: 15px; }.metric-card strong { font-size: 25px; }.metric-card span { font-size: 9px; }
   .timeline-toolbar { align-items: flex-end; padding: 17px 16px 14px; }.timeline-toolbar p { font-size: 10px; }.toolbar-actions .ghost-button:first-child { display: none; }.timeline-card { border-radius: 13px; }.timeline-grid { min-width: 760px; grid-template-columns: 105px 1fr; }.room-heading, .room-label { padding-left: 14px; }.live-pill { display: none; }.timeline-legend { padding: 11px 16px; min-height: 58px; }

@@ -188,10 +188,12 @@ function Connections({ oauthResult }: { oauthResult: OAuthResult }) {
   const sync = async (provider: string) => { setBusy(`sync-${provider}`); try { const result = await api<{ synced: number }>(`/api/connections/${provider}/sync`, { method: "POST" }); setMessage(`同步完成：处理 ${result.synced} 条读取或写入变更`); await load(); } catch (reason) { setMessage((reason as Error).message); } finally { setBusy(null); } };
   const syncAll = async () => { setBusy("sync-all"); try { const result = await api<{ synced: Record<string, number>; errors: Record<string, string> }>("/api/connections/sync-all", { method: "POST" }); const total = Object.values(result.synced).reduce((sum, value) => sum + value, 0); const errors = Object.entries(result.errors).map(([provider, detail]) => `${provider}: ${detail}`).join("；"); setMessage(errors ? `已处理 ${total} 条变更；${errors}` : `Google、Microsoft 与 Auto Calendar 已完成一轮同步，共处理 ${total} 条变更`); await load(); } catch (reason) { setMessage((reason as Error).message); } finally { setBusy(null); } };
   const copyCallback = async (item: Connection) => { try { await navigator.clipboard.writeText(item.redirect_uri); setCopied(item.provider); window.setTimeout(() => setCopied(null), 1800); } catch { setMessage("浏览器未允许自动复制，请手动选择回调地址复制。"); } };
+  const googleApiProject = message.match(/project\s+(\d+)/i)?.[1] || message.match(/[?&]project=(\d+)/i)?.[1];
+  const googleApiDisabled = /Calendar API has not been used|Calendar API.*disabled/i.test(message);
   return <section className="connections-page">
     <div className="page-heading connection-heading"><div><p className="eyebrow">外部日历</p><h1>让三端使用同一份酒店日程</h1><p>Auto Calendar 负责同步；Google / Outlook 的专用日历负责隔离酒店事件。相同名称的 tag 只是标识，不会自行产生同步。</p></div><button className="primary-button text-button" onClick={syncAll} disabled={busy === "sync-all" || !items.some((item) => item.selected_calendar_id)}>{busy === "sync-all" ? "正在同步…" : "同步全部日历"}</button></div>
     <OAuthDeploymentGuide connections={items} />
-    {message && <p className="notice-bar">{message}</p>}
+    {message && <div className="notice-bar action-notice"><span>{googleApiDisabled ? "Google OAuth 已连接，但当前 Cloud Project 还没有启用 Google Calendar API。请先启用一次，等待几分钟后再重试。" : message}</span>{googleApiDisabled && <a href={`https://console.cloud.google.com/apis/library/calendar-json.googleapis.com${googleApiProject ? `?project=${googleApiProject}` : ""}`} target="_blank" rel="noreferrer">打开并启用 Google Calendar API ↗</a>}</div>}
     <div className="connection-grid">{items.map((item) => {
       const setup = OAUTH_SETUP[item.provider];
       return <article className="connection-card" key={item.provider}>
